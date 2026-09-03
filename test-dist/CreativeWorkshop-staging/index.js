@@ -1441,7 +1441,7 @@ $(() => {
 /************************************************************************/
 /* harmony import */ var _index__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(827);
 globalThis.__CREATIVE_WORKSHOP_FORCED_URL__ =
-    'https://poemofdestinycreativeworkshop-staging.1528779666.workers.dev';
+    'https://poemofdestinycreativeworkshop-master-staging.johnjohnson67076.workers.dev';
 
 
 /******/ })()
