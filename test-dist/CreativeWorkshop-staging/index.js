@@ -2,7 +2,7 @@
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
-/***/ 584:
+/***/ 179:
 /***/ (() => {
 
 
@@ -66,6 +66,9 @@ function getCurrentCreativeWorkshopContext() {
         chatId: SillyTavern.getCurrentChatId(),
     };
 }
+
+;// ./src/CreativeWorkshop/version.ts
+const CREATIVE_WORKSHOP_CLIENT_VERSION = '2.0.13';
 
 ;// ./src/CreativeWorkshop/services/install-registry.ts
 const CREATIVE_WORKSHOP_INSTALL_REGISTRY_KEY = 'creative_workshop_install_registry';
@@ -870,13 +873,16 @@ function createBridgeMessage(type, payload, requestId) {
 
 
 
+
 const OAUTH_CALLBACK_SOURCE = 'creative-workshop-auth-callback';
 const OAUTH_POPUP_NAME = 'creative-workshop-oauth';
 const OAUTH_TIMEOUT_MS = 180000;
 const OAUTH_POPUP_CLOSE_GUARD_MS = 8000;
 function isOAuthCallbackMessage(value) {
     return (_.isObject(value) &&
-        (_.get(value, 'type') === 'oauth-success' || _.get(value, 'type') === 'oauth-error') &&
+        (_.get(value, 'type') === 'oauth-success' ||
+            _.get(value, 'type') === 'oauth-error' ||
+            _.get(value, 'type') === 'oauth-ready') &&
         _.get(value, 'source') === OAUTH_CALLBACK_SOURCE);
 }
 function createCreativeWorkshopBridgeHost(option) {
@@ -994,6 +1000,13 @@ function createCreativeWorkshopBridgeHost(option) {
             await failPendingOAuth('授权状态校验失败');
             return;
         }
+        if (event.data.type === 'oauth-ready') {
+            clearOAuthTimers();
+            cleanupOAuthPopupReference();
+            pendingOauthRequestId = undefined;
+            pendingOauthState = undefined;
+            return;
+        }
         if (event.data.type === 'oauth-success') {
             if (!_.isString(event.data.token) || !_.isObject(event.data.user)) {
                 await failPendingOAuth('授权回调缺少有效登录信息');
@@ -1041,7 +1054,7 @@ function createCreativeWorkshopBridgeHost(option) {
         try {
             switch (event.data.type) {
                 case 'bridge:handshake':
-                    await post('bridge:handshake:ok', { connected: true }, event.data.requestId);
+                    await post('bridge:handshake:ok', { connected: true, clientVersion: CREATIVE_WORKSHOP_CLIENT_VERSION }, event.data.requestId);
                     await post('bridge:context', getCurrentCreativeWorkshopContext(), event.data.requestId);
                     await post('bridge:installed-projects', { projects: await listInstalledCreativeWorkshopProjects() }, event.data.requestId);
                     break;
@@ -1439,6 +1452,15 @@ function openCreativeWorkshop() {
             borderRadius: useFullscreenLayout ? '0' : '20px',
             boxShadow: useFullscreenLayout ? 'none' : '0 24px 80px rgba(0,0,0,0.45)',
         });
+        $closeButton.css({
+            top: useFullscreenLayout
+                ? '50%'
+                : 'calc(env(safe-area-inset-top, 0px) + 12px)',
+            right: useFullscreenLayout ? 'auto' : 'calc(env(safe-area-inset-right, 0px) + 12px)',
+            left: useFullscreenLayout ? 'calc(env(safe-area-inset-left, 0px) + 6px)' : 'auto',
+            transform: useFullscreenLayout ? 'translateY(-50%)' : 'none',
+            padding: useFullscreenLayout ? '0 10px' : '0 14px',
+        });
     };
     updateOverlayLayout();
     host$(hostWindow).on('resize.creative-workshop-overlay', updateOverlayLayout);
@@ -1564,7 +1586,7 @@ $(() => {
 /******/ 	}
 /******/ 	
 /************************************************************************/
-/* harmony import */ var _index__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(584);
+/* harmony import */ var _index__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(179);
 globalThis.__CREATIVE_WORKSHOP_FORCED_URL__ =
     'https://workshop-test.uika.cc.cd';
 
