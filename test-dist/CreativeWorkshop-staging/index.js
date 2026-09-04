@@ -2,7 +2,7 @@
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
-/***/ 584:
+/***/ 179:
 /***/ (() => {
 
 
@@ -66,6 +66,9 @@ function getCurrentCreativeWorkshopContext() {
         chatId: SillyTavern.getCurrentChatId(),
     };
 }
+
+;// ./src/CreativeWorkshop/version.ts
+const CREATIVE_WORKSHOP_CLIENT_VERSION = '2.0.13';
 
 ;// ./src/CreativeWorkshop/services/install-registry.ts
 const CREATIVE_WORKSHOP_INSTALL_REGISTRY_KEY = 'creative_workshop_install_registry';
@@ -870,6 +873,7 @@ function createBridgeMessage(type, payload, requestId) {
 
 
 
+
 const OAUTH_CALLBACK_SOURCE = 'creative-workshop-auth-callback';
 const OAUTH_POPUP_NAME = 'creative-workshop-oauth';
 const OAUTH_TIMEOUT_MS = 180000;
@@ -1050,7 +1054,7 @@ function createCreativeWorkshopBridgeHost(option) {
         try {
             switch (event.data.type) {
                 case 'bridge:handshake':
-                    await post('bridge:handshake:ok', { connected: true }, event.data.requestId);
+                    await post('bridge:handshake:ok', { connected: true, clientVersion: CREATIVE_WORKSHOP_CLIENT_VERSION }, event.data.requestId);
                     await post('bridge:context', getCurrentCreativeWorkshopContext(), event.data.requestId);
                     await post('bridge:installed-projects', { projects: await listInstalledCreativeWorkshopProjects() }, event.data.requestId);
                     break;
@@ -1582,7 +1586,7 @@ $(() => {
 /******/ 	}
 /******/ 	
 /************************************************************************/
-/* harmony import */ var _index__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(584);
+/* harmony import */ var _index__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(179);
 globalThis.__CREATIVE_WORKSHOP_FORCED_URL__ =
     'https://workshop-test.uika.cc.cd';
 
