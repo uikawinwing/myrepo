@@ -77,6 +77,10 @@ A key safety lesson from the cleanup:
 
 The temporary integration worktree `C:\Project\myrepo-integration-20260905` later continued as a safe staging/integration workspace. It is not intended to become a permanent second project directory and should be removed once unique untracked artifacts are migrated and the primary worktree is safely returned to a current branch.
 
+Before final cleanup, the old primary worktree also contained an uncommitted `cloudflare/package.json` helper diff adding `deploy:prod-profile`, `check:prod-profile`, and a pnpm `allowScripts` block. These were operational/release-environment helpers rather than Creative Workshop runtime behavior. They were intentionally not carried forward into the staging source tree because the current SOP already requires explicit verified production-profile commands and the staging package manifest does not need those historical local helpers.
+
+The old `src/CreativeWorkshop/index.ts` dirty diff contained two different things: a genuine prior mobile close-button placement intent and unfinished `mobileExitArmed` timer/state code. The positioning intent was preserved in `docs/plans/workshop-persistent-session.md` as historical UX evidence; the unfinished arm-state code was treated as dead experimental state and intentionally not carried forward.
+
 ## Workflow decision established afterward
 
 The project moved to an explicit staging acceptance gate:
