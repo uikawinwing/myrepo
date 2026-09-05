@@ -1,6 +1,8 @@
-# Git / Release SOP
+# Git / Staging / Release SOP
 
-This repository uses a fork-first development workflow. Git repository ownership and production runtime infrastructure are separate concerns.
+This repository uses a fork-first workflow with a mandatory staging acceptance gate before owner production integration.
+
+Git repository state and runtime deployment state are separate systems. Always report and verify them separately.
 
 ## 1. Canonical topology
 
@@ -12,17 +14,114 @@ This repository uses a fork-first development workflow. Git repository ownership
 Branch meaning:
 
 - `upstream/main` = canonical owner / production source branch.
-- `origin/main` = synchronized mirror of `upstream/main`.
-- `origin/main` is not a task-development branch.
-- Temporary work happens on `fix/*`, `feature/*`, `hotfix-*`, or another short-lived branch in the user fork.
+- `origin/main` = synchronized mirror of `upstream/main`; not a task-development branch.
+- `origin/staging` = Master-facing integration/test branch.
+- task branches = temporary `feature/*`, `fix/*`, `hotfix-*`, etc.
 
 Never infer repository ownership from a remote name. Verify URLs before the first remote operation of every session.
 
-## 2. Runtime / infrastructure boundary
+## 2. Mandatory terminology contract
+
+Do not use the single word `staging` when more than one meaning is possible.
+
+| Phrase | Exact meaning |
+| --- | --- |
+| **local worktree** | Local filesystem checkout/worktree only |
+| **task branch** | Short-lived feature/fix branch under development |
+| **origin/staging** | GitHub branch `uikawinwing/myrepo:staging` |
+| **integrate into staging** | Merge/cherry-pick/fast-forward task commits into the staging branch history |
+| **push staging** | Push Git commits to `origin/staging`; GitHub only |
+| **staging Worker** | Cloudflare Worker used for Master testing |
+| **deploy staging** | Deploy an exact Git commit to the staging Worker; Cloudflare only |
+| **staging site** | Test URL served by the staging Worker |
+| **owner main** | `upstream/main` / `AkabaneSaki/myrepo:main` |
+| **production Worker** | Owner production Cloudflare Worker |
+| **promote to production** | PR/merge into owner main, then deploy exact merged owner-main commit |
+
+Current project staging runtime identifiers:
+
+```text
+staging Worker = poemofdestinycreativeworkshop-master-staging
+staging site   = workshop-test.uika.cc.cd
+Cloudflare     = Johnjohnson personal staging environment
+```
+
+These runtime identifiers must still be verified before deployment; they are not inferred from Git remotes.
+
+### Forbidden ambiguous reporting
+
+Do not say only:
+
+```text
+staging is updated
+changed on staging
+staging is ready
+deployed to staging
+```
+
+Instead report both Git and runtime explicitly:
+
+```text
+Git
+origin/staging = abc1234
+
+Cloudflare
+staging Worker deployed Git SHA = abc1234
+Worker Version = <cloudflare-version-id>
+staging site verification = passed
+
+Production
+unchanged
+```
+
+## 3. Staging source-of-truth rule
+
+The staging Worker must normally run code that already exists in `origin/staging`.
+
+Mandatory order:
+
+```text
+task branch
+→ local tests/review
+→ integrate into staging
+→ push staging
+→ record exact origin/staging SHA
+→ deploy that exact SHA to staging Worker
+→ verify staging site
+→ Master acceptance test
+```
+
+### Do not skip `origin/staging`
+
+Normal flow must **not** be:
+
+```text
+task branch
+→ staging Worker
+```
+
+If an isolated experiment really needs direct branch deployment, use a separately named **preview Worker / temporary Worker**. Never use the normal staging Worker for code that is not already represented in `origin/staging`.
+
+### Deploy precondition
+
+Before `deploy staging`:
+
+1. refresh `origin/staging`,
+2. identify the exact deploy SHA,
+3. verify that SHA is contained in `origin/staging`,
+4. in the normal staging worktree, prefer the stricter invariant:
+
+```text
+local HEAD == refreshed origin/staging
+```
+
+If they differ, stop. Integrate/push first; do not deploy the task branch directly.
+
+## 4. Runtime / infrastructure boundary
 
 The user fork is a Git code fork only.
 
-It does **not** mean the fork owns or uses the owner's:
+It does **not** imply ownership or use of the owner's:
 
 - Discord bot,
 - Discord OAuth application/configuration,
@@ -32,16 +131,16 @@ It does **not** mean the fork owns or uses the owner's:
 - production secrets,
 - production bindings.
 
-Production Cloudflare and Discord configuration is a separate environment and must be verified independently before deployment or permission changes.
-
 Important consequences:
 
-- Pushing code to `origin` does not deploy production.
-- A GitHub fork does not inherit production secrets or Cloudflare/Discord ownership.
-- Do not copy, infer, or substitute owner production credentials from the user fork.
-- Before production deployment, verify the exact Cloudflare account/profile, Worker, D1/resources, and relevant Discord/OAuth environment.
+- `push staging` updates GitHub only.
+- `deploy staging` updates Cloudflare runtime only.
+- A successful Git push does not mean the Worker is updated.
+- A successful Worker deploy does not prove GitHub contains the deployed code.
+- A successful PR merge does not mean production is deployed.
+- Production runtime configuration must be verified separately from repository ownership.
 
-## 3. Start-of-session preflight
+## 5. Start-of-session Git preflight
 
 Before commit, merge, push, tag, PR preparation, deploy, or branch cleanup:
 
@@ -53,24 +152,24 @@ git fetch upstream main:refs/remotes/upstream/main
 git branch -vv
 ```
 
-Confirm all of the following:
+Confirm:
 
-1. current branch,
+1. current branch/worktree,
 2. dirty/clean working tree,
 3. `origin` = `uikawinwing/myrepo`,
 4. `upstream` = `AkabaneSaki/myrepo`,
-5. `upstream/main` has been freshly updated,
-6. exact files that belong to the current task.
+5. `upstream/main` was freshly updated,
+6. exact files belonging to the current task.
 
 Do not rely on `FETCH_HEAD` alone as proof that `upstream/main` is current.
 
+Before staging deployment, additionally refresh/verify `origin/staging` and record the exact SHA to deploy.
+
 If any item is unclear, stop before publishing or deploying.
 
-## 4. Keep the fork main synchronized
+## 6. Keep fork main synchronized
 
-The fork `main` should mirror owner `main`.
-
-Normal sync direction:
+Normal direction:
 
 ```text
 upstream/main
@@ -80,72 +179,145 @@ origin/main
 
 Do not develop features directly on `origin/main`.
 
-If the fork main is behind and has no intentional unique work, update it from refreshed `upstream/main` using a normal fast-forward-safe workflow. Never force-push either main branch just to make history look clean.
+Do not force-push either main branch merely to make history look clean.
 
-## 5. Normal feature / fix workflow
+## 7. Normal feature / fix workflow
 
-```text
-refresh upstream/main
-→ sync origin/main if needed
-→ create task branch from upstream/main
-→ implement
-→ test + review
-→ stage explicit files only
-→ commit
-→ push task branch to origin (user fork)
-→ PR: uikawinwing:<task-branch> → AkabaneSaki:main
-→ owner merges PR
-→ sync origin/main again
-→ delete task branch locally and from origin
-```
-
-Recommended temporary names:
-
-- `fix/<short-name>-YYYYMMDD`
-- `feature/<short-name>-YYYYMMDD`
-- `hotfix-<short-name>-YYYYMMDD`
-- `release-<area>-YYYYMMDD`
-
-Do not normally create task branches directly in the owner repository.
-
-## 6. Production hotfix workflow
-
-Normal production order is:
+This is the default workflow for ordinary changes:
 
 ```text
-1. Refresh upstream/main
-2. Create hotfix branch from upstream/main
-3. Implement
-4. Test
-5. Review
-6. Commit exact hotfix files
-7. Push hotfix branch to origin
-8. PR origin hotfix branch → upstream/main
-9. Merge PR into owner main
-10. Deploy the exact merged owner-main commit
-11. Verify production
-12. Re-sync origin/main
-13. Delete hotfix branch locally and from origin
+1. refresh upstream/main
+2. sync origin/main if needed
+3. create task branch from refreshed upstream/main
+4. implement
+5. local tests + review
+6. stage explicit files only
+7. commit
+8. optionally push task branch to origin for backup/review
+9. integrate accepted task commit(s) into the staging line
+10. push origin/staging
+11. record exact origin/staging SHA
+12. deploy that SHA to staging Worker
+13. verify staging site
+14. Master real-world acceptance test
+15. if bugs remain: fix → test → integrate/push origin/staging → deploy staging again
+16. after Master accepts staging: prepare PR to owner main
+17. owner merges PR
+18. deploy exact merged owner-main SHA to production Worker
+19. verify production
+20. sync origin/main
+21. clean up temporary branches when safe
 ```
 
-A successful Cloudflare deploy does **not** mean GitHub is synchronized.
+The critical gate is:
 
-A successful PR merge does **not** mean production has been deployed.
+```text
+Master has not accepted staging
+→ no owner PR merge
+→ no production deploy
+```
 
-Both states must be reported separately.
+## 8. What "integrate into staging" means
 
-### Emergency exception
+`integrate into staging` describes Git history only. It can be performed by the safest appropriate method:
 
-Do not deploy a dirty working tree unless the user explicitly asks for an emergency exception.
+- fast-forward,
+- cherry-pick of reviewed commits,
+- merge when justified.
 
-If an emergency deploy happens before the normal PR flow finishes, the task is not complete until the exact deployed code is:
+Do not call a normal push a merge if no merge occurred.
+
+Examples:
+
+```text
+"Integrated commit abc1234 into origin/staging"  ✅
+"Pushed origin/staging to abc1234"               ✅
+"Deployed abc1234 to staging Worker"             ✅
+```
+
+These are three different events and should be reported separately.
+
+## 9. Staging deployment SOP
+
+Before deploy:
+
+```text
+Git
+origin/staging exact SHA known           yes
+local deploy source matches that SHA     yes
+tests green                              yes
+unrelated dirty files excluded           yes
+
+Cloudflare
+personal staging account verified        yes
+staging Worker verified                  yes
+staging D1/KV/R2 verified when relevant  yes
+production account/resources untouched   yes
+```
+
+Then deploy.
+
+After deploy record:
+
+```text
+origin/staging SHA:
+staging Worker:
+Worker Version ID:
+staging site:
+live verification:
+production changed: no
+```
+
+Where practical, verify the live site contains behavior/code unique to the deployed SHA rather than trusting the deploy log alone.
+
+## 10. Preview / experimental deployment exception
+
+A task branch may be deployed before `origin/staging` only when all of these are true:
+
+- the purpose is explicitly experimental,
+- the runtime is separately named preview/temporary infrastructure,
+- it cannot be confused with the Master staging Worker,
+- the report explicitly says the code is **not in `origin/staging`**.
+
+Never use this exception silently.
+
+## 11. Production promotion workflow
+
+Production order is:
+
+```text
+staging accepted by Master
+→ refresh upstream/main
+→ prepare/rebase/cherry-pick clean owner PR as appropriate
+→ PR from user fork to owner main
+→ owner merge
+→ record exact merged owner-main SHA
+→ deploy that exact SHA to production Worker
+→ verify production
+→ sync origin/main
+```
+
+Do not deploy production from:
+
+- a task branch,
+- `origin/staging`,
+- an unmerged PR head,
+- a dirty worktree.
+
+Production should normally run an exact commit already present in owner main.
+
+### Emergency production exception
+
+Do not deploy a dirty/unmerged build unless Master explicitly requests an emergency exception.
+
+If an emergency deploy occurs, the task remains unreconciled until the exact deployed code is:
 
 - committed,
-- pushed to the user fork,
-- reconciled through a PR or equivalent owner-main integration,
-- verified against production.
+- preserved in the user fork,
+- reconciled into owner main,
+- mapped back to a known production deployment.
 
-## 7. Safe commits in a dirty workspace
+## 12. Safe commits in a dirty workspace
 
 Use explicit paths:
 
@@ -165,54 +337,60 @@ unless the entire working tree has intentionally been reviewed as one task.
 
 Unrelated local edits must remain unstaged and untouched.
 
-## 8. Old branch cleanup SOP
+## 13. Push safety
 
-Classify every old branch against refreshed `upstream/main`.
+Before any push:
 
-### A. Required changes already in `upstream/main`
+1. verify actual remote URL,
+2. verify exact source commit/branch,
+3. verify destination branch,
+4. verify no unrelated files are included,
+5. never force-push `origin/main` or `upstream/main`.
+
+For `push staging`, say explicitly:
+
+```text
+Pushing <old-sha> → <new-sha> to uikawinwing/myrepo:staging
+```
+
+If rejected as non-fast-forward, inspect remote tip and ancestry first. Never guess who changed the branch and never force merely to bypass the rejection.
+
+## 14. Old branch cleanup SOP
+
+Classify every old branch against refreshed `upstream/main` and, where relevant, `origin/staging`.
+
+### A. Required changes already in owner main
 
 Safe to delete after verification.
 
-### B. Still-needed unique work, cleanly integratable
+### B. Required changes preserved in `origin/staging`, awaiting promotion
 
-Move only the needed commits into a clean task branch based on refreshed `upstream/main`, push that branch to the user fork, and use the normal PR flow.
+May be deleted if the needed commits are safely represented in `origin/staging` and no unique local-only work remains.
 
-### C. Conflicts with current owner main
+### C. Still-needed unique work
 
-Do not merge the whole old branch just to clean it up.
+Move only the needed commits into a clean task/staging line. Do not preserve an obsolete branch merely as an archive.
 
-Inspect unique commits and cherry-pick/recreate only still-needed work onto a clean branch based on `upstream/main`.
+### D. Conflicts with current owner main
 
-### D. Obsolete test/recovery branch
+Do not merge the whole old branch just to clean it. Inspect unique commits and cherry-pick/recreate only the needed work.
 
-Record that its unique work is obsolete, then delete it.
+### E. Obsolete test/recovery branch
 
-For uncertain branches, preserve dirty work first and test from refreshed `upstream/main` on a disposable audit branch:
+Record that the unique work is obsolete, then delete it.
 
-```powershell
-git merge --no-commit --no-ff <branch-or-sha>
-```
-
-Then abort immediately:
-
-```powershell
-git merge --abort
-```
-
-Restore the original working state afterward.
-
-## 9. Branch lifetime policy
+## 15. Branch lifetime policy
 
 Long-lived:
 
-- owner `main`,
-- fork `main`,
-- `staging` only if it is actively used as a real staging environment.
+- `upstream/main`,
+- `origin/main`,
+- `origin/staging` while the real staging environment is actively used.
 
-Temporary and expected to be deleted:
+Temporary:
 
-- `fix/*`,
 - `feature/*`,
+- `fix/*`,
 - `hotfix-*`,
 - `release-*`,
 - `cw-test-*`,
@@ -221,65 +399,71 @@ Temporary and expected to be deleted:
 
 Temporary branches are workspaces, not archives.
 
-## 10. Push / PR safety
-
-Before any push:
-
-1. verify remote URL,
-2. verify exact source commit/branch,
-3. verify destination branch,
-4. verify no unrelated files are included,
-5. never force-push `origin/main` or `upstream/main`.
-
-Normal publishing target for task branches is the **user fork (`origin`)**.
-
-Normal integration target is a PR into **owner `main` (`upstream/main`)**.
-
-If a push is rejected as non-fast-forward, do not guess who changed the branch. First inspect local tip, remote tip, and ancestry. Do not attribute the change to another person/session without evidence.
-
-## 11. Cloudflare / Discord production checklist
+## 16. Cloudflare / Discord production checklist
 
 Before production deploy:
 
-- exact code commit is known,
-- owner `main` contains the intended change unless explicitly using an emergency exception,
-- tests are green,
-- production Cloudflare account/profile is verified,
-- Worker name and bindings are verified,
-- D1 migration order is correct,
-- production Discord/OAuth environment is verified when relevant,
-- no assumption is made that the user fork carries production secrets/configuration.
+- exact owner-main commit known,
+- owner main contains intended change,
+- staging acceptance already completed unless explicitly waived,
+- tests green,
+- production Cloudflare account/profile verified,
+- Worker and bindings verified,
+- D1 migration order correct,
+- production Discord/OAuth environment verified when relevant,
+- no production credential/binding is inferred from the user fork.
 
 After deploy:
 
 - verify Worker deployment success,
 - verify critical endpoint/UI behavior,
-- record Worker/version information when useful,
-- record the exact Git commit deployed,
-- confirm owner `main` contains that commit,
-- sync fork `main` afterward.
+- record Worker/version information,
+- record exact Git commit deployed,
+- confirm owner main contains that commit,
+- sync fork main afterward.
 
-## 12. End-of-session report
+## 17. Required status reporting template
 
-Every Git/release task ends with:
+For staging work, report this format:
 
 ```text
-Current local branch:
-Commit SHA(s):
-Pushed to user fork:
-PR / owner integration status:
-Owner main contains change: yes/no
-Production deployed: yes/no
-Production environment verified: yes/no/not-applicable
-Fork main synchronized: yes/no
-Remaining temporary branches:
-Remaining unrelated local changes:
+Local
+worktree/branch = ...
+local HEAD = ...
+
+Git
+origin/staging = ...
+task branch = ... (if relevant)
+owner main = ... / unchanged
+
+Cloudflare staging
+staging Worker = ...
+deployed Git SHA = ...
+Worker Version = ...
+staging site verification = passed/failed/not-yet-run
+
+Production
+owner main contains change = yes/no
+production deployed = yes/no
 ```
 
-If owner `main` does not contain a production change, or if the deployed code does not map to a known commit, state that explicitly. The task is not fully reconciled.
+For production work add the exact production Worker version/deployment identity.
 
-## 13. Default principle
+Never let the phrase "staging done" substitute for this separation.
 
-Use the user fork for development and the owner repository for reviewed integration.
+## 18. Default principle
 
-Treat Git state and runtime infrastructure state as separate systems that must both be verified explicitly.
+Use the user fork for development, `origin/staging` as the Master acceptance integration branch, and owner main as the production source of truth.
+
+The normal chain is:
+
+```text
+task branch
+→ origin/staging
+→ staging Worker
+→ Master acceptance
+→ owner main
+→ production Worker
+```
+
+Git state and runtime state must always be verified and reported separately.

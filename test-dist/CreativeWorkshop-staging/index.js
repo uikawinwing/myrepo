@@ -154,10 +154,12 @@ function pruneCreativeWorkshopCacheStore(cache) {
     cache.worldbookSources = _.pickBy(cache.worldbookSources || {}, entry => now - entry.cachedAt <= WORLDBOOK_SOURCE_CACHE_TTL_MS * 3);
     return cache;
 }
-function getCachedProjectDetail(projectId) {
+function getCachedProjectDetail(projectId, expectedVersion) {
     const cache = getCreativeWorkshopCacheStore();
     const entry = cache.projectDetails?.[projectId];
-    if (!entry || Date.now() - entry.cachedAt > PROJECT_DETAIL_CACHE_TTL_MS) {
+    if (!entry ||
+        Date.now() - entry.cachedAt > PROJECT_DETAIL_CACHE_TTL_MS ||
+        (expectedVersion && _.get(entry.data, 'project.version') !== expectedVersion)) {
         return null;
     }
     return entry.data;
@@ -179,10 +181,10 @@ function getCachedWorldbookSource(projectId, downloadUrl) {
     }
     return entry.data;
 }
-function getAnyCachedWorldbookSource(projectId) {
+function getAnyCachedWorldbookSource(projectId, downloadUrl) {
     const cache = getCreativeWorkshopCacheStore();
     const entry = cache.worldbookSources?.[projectId];
-    return entry ? entry.data : null;
+    return entry?.downloadUrl === downloadUrl ? entry.data : null;
 }
 function setCachedWorldbookSource(projectId, downloadUrl, data) {
     const cache = pruneCreativeWorkshopCacheStore(getCreativeWorkshopCacheStore());
@@ -250,7 +252,7 @@ async function fetchCreativeWorkshopProjectWorldbookSource(projectDetail) {
     }
     catch (error) {
         if (_.isString(projectId) && projectId) {
-            const fallback = getAnyCachedWorldbookSource(projectId);
+            const fallback = getAnyCachedWorldbookSource(projectId, downloadUrl);
             if (fallback) {
                 console.warn('[CreativeWorkshop] 使用缓存的世界书源文件', { projectId, error });
                 return fallback;
@@ -259,14 +261,15 @@ async function fetchCreativeWorkshopProjectWorldbookSource(projectDetail) {
         throw error;
     }
 }
-async function fetchCreativeWorkshopProjectDetail(projectId) {
-    const cached = getCachedProjectDetail(projectId);
+async function fetchCreativeWorkshopProjectDetail(projectId, expectedVersion) {
+    const cached = getCachedProjectDetail(projectId, expectedVersion);
     if (cached) {
         return cached;
     }
     try {
-        const response = await fetch(`${getCreativeWorkshopUrl()}/api/projects/${projectId}`, {
-            cache: 'force-cache',
+        const versionQuery = expectedVersion ? `?v=${encodeURIComponent(expectedVersion)}` : '';
+        const response = await fetch(`${getCreativeWorkshopUrl()}/api/projects/${projectId}${versionQuery}`, {
+            cache: expectedVersion ? 'force-cache' : 'no-cache',
         });
         if (!response.ok) {
             throw new Error(`获取云端项目详情失败: ${response.status}`);
@@ -285,8 +288,8 @@ async function fetchCreativeWorkshopProjectDetail(projectId) {
     }
     catch (error) {
         const fallback = getCreativeWorkshopCacheStore().projectDetails?.[projectId]?.data;
-        if (fallback) {
-            console.warn('[CreativeWorkshop] 使用缓存的项目详情', { projectId, error });
+        if (fallback && (!expectedVersion || _.get(fallback, 'project.version') === expectedVersion)) {
+            console.warn('[CreativeWorkshop] 使用缓存的项目详情', { projectId, expectedVersion, error });
             return fallback;
         }
         throw error;
@@ -357,8 +360,8 @@ function diffByKey(localItems, remoteItems, keyGetter) {
     });
     return { added, removed, modified };
 }
-async function getCreativeWorkshopProjectDiff(projectId) {
-    const detail = await fetchCreativeWorkshopProjectDetail(projectId);
+async function getCreativeWorkshopProjectDiff(projectId, expectedVersion) {
+    const detail = await fetchCreativeWorkshopProjectDetail(projectId, expectedVersion);
     const charWorldbooks = getCharWorldbookNames('current');
     const worldbookName = (await resolveCreativeWorkshopInstallWorldbook(projectId)) || charWorldbooks.primary;
     const worldbookEntries = worldbookName && getWorldbookNames().includes(worldbookName)
@@ -482,8 +485,8 @@ async function listInstalledCreativeWorkshopProjects() {
 ;// ./src/CreativeWorkshop/services/regex.ts
 
 
-async function installCreativeWorkshopRegex(projectId, selectedEntryKeys) {
-    const detail = await fetchCreativeWorkshopProjectDetail(projectId);
+async function installCreativeWorkshopRegex(projectId, selectedEntryKeys, expectedVersion) {
+    const detail = await fetchCreativeWorkshopProjectDetail(projectId, expectedVersion);
     const selected = selectedEntryKeys ? new Set(selectedEntryKeys) : null;
     const regexEntries = (detail.regexEntriesPreview || [])
         .map((entry, originalIndex) => ({
@@ -527,9 +530,9 @@ async function installCreativeWorkshopRegex(projectId, selectedEntryKeys) {
 async function uninstallCreativeWorkshopRegex(projectId) {
     return updateTavernRegexesWith(regexes => regexes.filter(regex => !getCreativeWorkshopRegexId(regex).startsWith(`creative_workshop:${projectId}:`)), { scope: 'character' });
 }
-async function updateCreativeWorkshopRegex(projectId) {
+async function updateCreativeWorkshopRegex(projectId, expectedVersion) {
     await uninstallCreativeWorkshopRegex(projectId);
-    return installCreativeWorkshopRegex(projectId);
+    return installCreativeWorkshopRegex(projectId, undefined, expectedVersion);
 }
 
 ;// ./src/CreativeWorkshop/services/worldbook-normalize.ts
@@ -722,8 +725,8 @@ function getRecursionDelayUntil(entry) {
         return entry.delayUntilRecursion ? 1 : null;
     return null;
 }
-async function prepareCreativeWorkshopProject(projectId, selectedEntryKeys) {
-    const detail = await fetchCreativeWorkshopProjectDetail(projectId);
+async function prepareCreativeWorkshopProject(projectId, selectedEntryKeys, expectedVersion) {
+    const detail = await fetchCreativeWorkshopProjectDetail(projectId, expectedVersion);
     const sourceEntries = await fetchCreativeWorkshopProjectWorldbookSource(detail);
     const entries = sourceEntries.length > 0 ? sourceEntries : detail.worldbookEntriesPreview || [];
     const selected = selectedEntryKeys ? new Set(selectedEntryKeys) : null;
@@ -825,8 +828,8 @@ async function deleteProjectEntriesFromWorldbook(projectId, worldbookName) {
     const result = await deleteWorldbookEntries(worldbookName, entry => _.get(entry, 'extra.cw_project_id') === projectId || _.get(entry, 'extra.fate_project_name') === projectId);
     return result.deleted_entries;
 }
-async function installCreativeWorkshopProject(projectId, selectedEntryKeys, requestedWorldbookName) {
-    const { detail, prepared } = await prepareCreativeWorkshopProject(projectId, selectedEntryKeys);
+async function installCreativeWorkshopProject(projectId, selectedEntryKeys, requestedWorldbookName, expectedVersion) {
+    const { detail, prepared } = await prepareCreativeWorkshopProject(projectId, selectedEntryKeys, expectedVersion);
     const worldbookName = requestedWorldbookName
         ? await ensureTargetWorldbook(requestedWorldbookName)
         : getCurrentWorldbookName();
@@ -840,8 +843,8 @@ async function uninstallCreativeWorkshopProject(projectId) {
     deleteCreativeWorkshopInstallRecord(projectId);
     return deletedEntries;
 }
-async function updateCreativeWorkshopProject(projectId) {
-    const { detail, prepared } = await prepareCreativeWorkshopProject(projectId);
+async function updateCreativeWorkshopProject(projectId, expectedVersion) {
+    const { detail, prepared } = await prepareCreativeWorkshopProject(projectId, undefined, expectedVersion);
     const worldbookName = await ensureTargetWorldbook(await getInstalledWorldbookName(projectId));
     await deleteProjectEntriesFromWorldbook(projectId, worldbookName);
     await applyPreparedProject(projectId, detail, prepared, worldbookName);
@@ -1068,8 +1071,8 @@ function createCreativeWorkshopBridgeHost(option) {
                     if (!_.isString(_.get(event.data, 'payload.projectId'))) {
                         throw new Error('缺少 projectId');
                     }
-                    await installCreativeWorkshopProject(String(event.data.payload?.projectId), Array.isArray(event.data.payload?.worldbookEntryKeys) ? event.data.payload?.worldbookEntryKeys.map(String) : undefined, _.isString(event.data.payload?.worldbookName) ? String(event.data.payload?.worldbookName) : undefined);
-                    await installCreativeWorkshopRegex(String(event.data.payload?.projectId), Array.isArray(event.data.payload?.regexEntryKeys) ? event.data.payload?.regexEntryKeys.map(String) : undefined);
+                    await installCreativeWorkshopProject(String(event.data.payload?.projectId), Array.isArray(event.data.payload?.worldbookEntryKeys) ? event.data.payload?.worldbookEntryKeys.map(String) : undefined, _.isString(event.data.payload?.worldbookName) ? String(event.data.payload?.worldbookName) : undefined, _.isString(event.data.payload?.projectVersion) ? String(event.data.payload?.projectVersion) : undefined);
+                    await installCreativeWorkshopRegex(String(event.data.payload?.projectId), Array.isArray(event.data.payload?.regexEntryKeys) ? event.data.payload?.regexEntryKeys.map(String) : undefined, _.isString(event.data.payload?.projectVersion) ? String(event.data.payload?.projectVersion) : undefined);
                     await post('bridge:install-result', {
                         success: true,
                         projectId: String(event.data.payload?.projectId),
@@ -1093,7 +1096,7 @@ function createCreativeWorkshopBridgeHost(option) {
                     if (!_.isString(_.get(event.data, 'payload.projectId'))) {
                         throw new Error('缺少 projectId');
                     }
-                    const diffResult = await getCreativeWorkshopProjectDiff(String(event.data.payload?.projectId));
+                    const diffResult = await getCreativeWorkshopProjectDiff(String(event.data.payload?.projectId), _.isString(event.data.payload?.projectVersion) ? String(event.data.payload?.projectVersion) : undefined);
                     await post('bridge:project-diff', diffResult, event.data.requestId);
                     break;
                 }
@@ -1101,8 +1104,11 @@ function createCreativeWorkshopBridgeHost(option) {
                     if (!_.isString(_.get(event.data, 'payload.projectId'))) {
                         throw new Error('缺少 projectId');
                     }
-                    await updateCreativeWorkshopProject(String(event.data.payload?.projectId));
-                    await updateCreativeWorkshopRegex(String(event.data.payload?.projectId));
+                    const expectedVersion = _.isString(event.data.payload?.projectVersion)
+                        ? String(event.data.payload?.projectVersion)
+                        : undefined;
+                    await updateCreativeWorkshopProject(String(event.data.payload?.projectId), expectedVersion);
+                    await updateCreativeWorkshopRegex(String(event.data.payload?.projectId), expectedVersion);
                     await post('bridge:update-result', {
                         success: true,
                         projectId: String(event.data.payload?.projectId),
