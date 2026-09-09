@@ -2,7 +2,7 @@
 /******/ 	"use strict";
 
 ;// ./util/iframe_srcdoc.html
-const iframe_srcdoc_namespaceObject = "<!doctype html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n</head>\n<body></body>\n</html>\n";
+const iframe_srcdoc_namespaceObject = "<!doctype html>\r\n<html>\r\n<head>\r\n  <meta charset=\"utf-8\">\r\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\r\n</head>\r\n<body></body>\r\n</html>\r\n";
 ;// ./util/script.ts
 
 function teleportStyle(appendTo = 'head') {
@@ -171,6 +171,14 @@ function pruneCreativeWorkshopCacheStore(cache) {
     cache.projectDetails = _.pickBy(cache.projectDetails || {}, entry => now - entry.cachedAt <= PROJECT_DETAIL_CACHE_TTL_MS * 3);
     cache.worldbookSources = _.pickBy(cache.worldbookSources || {}, entry => now - entry.cachedAt <= WORLDBOOK_SOURCE_CACHE_TTL_MS * 3);
     return cache;
+}
+function invalidateCreativeWorkshopProjectCache(projectId) {
+    const cache = getCreativeWorkshopCacheStore();
+    if (cache.projectDetails)
+        delete cache.projectDetails[projectId];
+    if (cache.worldbookSources)
+        delete cache.worldbookSources[projectId];
+    writeCreativeWorkshopCacheStore(cache);
 }
 function getCachedProjectDetail(projectId, expectedVersion) {
     const cache = getCreativeWorkshopCacheStore();
@@ -942,6 +950,7 @@ async function deleteProjectEntriesFromInstalledWorldbooks(projectId, preferredW
     return deletedEntries;
 }
 async function installCreativeWorkshopProject(projectId, selectedEntryKeys, requestedWorldbookName, expectedVersion) {
+    invalidateCreativeWorkshopProjectCache(projectId);
     const { detail, prepared } = await prepareCreativeWorkshopProject(projectId, selectedEntryKeys, expectedVersion);
     const worldbookName = requestedWorldbookName
         ? await ensureTargetWorldbook(requestedWorldbookName)
@@ -957,6 +966,7 @@ async function uninstallCreativeWorkshopProject(projectId, legacyProjectName) {
     return deletedEntries;
 }
 async function updateCreativeWorkshopProject(projectId, expectedVersion, legacyProjectName) {
+    invalidateCreativeWorkshopProjectCache(projectId);
     const { detail, prepared } = await prepareCreativeWorkshopProject(projectId, undefined, expectedVersion);
     const worldbookName = await ensureTargetWorldbook(await getInstalledWorldbookName(projectId, legacyProjectName));
     const otherWorldbooks = _.uniq(getCreativeWorkshopRelevantWorldbookNames(projectId, legacyProjectName))
