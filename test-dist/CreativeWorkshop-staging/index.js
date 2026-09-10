@@ -181,6 +181,14 @@ function pruneCreativeWorkshopCacheStore(cache) {
     cache.worldbookSources = _.pickBy(cache.worldbookSources || {}, entry => now - entry.cachedAt <= WORLDBOOK_SOURCE_CACHE_TTL_MS * 3);
     return cache;
 }
+function invalidateCreativeWorkshopProjectCache(projectId) {
+    const cache = getCreativeWorkshopCacheStore();
+    if (cache.projectDetails)
+        delete cache.projectDetails[projectId];
+    if (cache.worldbookSources)
+        delete cache.worldbookSources[projectId];
+    writeCreativeWorkshopCacheStore(cache);
+}
 function getCachedProjectDetail(projectId, expectedVersion) {
     const cache = getCreativeWorkshopCacheStore();
     const entry = cache.projectDetails?.[projectId];
@@ -200,25 +208,31 @@ function setCachedProjectDetail(projectId, data) {
     };
     writeCreativeWorkshopCacheStore(cache);
 }
-function getCachedWorldbookSource(projectId, downloadUrl) {
+function getCachedWorldbookSource(projectId, downloadUrl, projectVersion) {
     const cache = getCreativeWorkshopCacheStore();
     const entry = cache.worldbookSources?.[projectId];
-    if (!entry || entry.downloadUrl !== downloadUrl || Date.now() - entry.cachedAt > WORLDBOOK_SOURCE_CACHE_TTL_MS) {
+    if (!entry ||
+        entry.downloadUrl !== downloadUrl ||
+        Date.now() - entry.cachedAt > WORLDBOOK_SOURCE_CACHE_TTL_MS ||
+        (projectVersion && entry.projectVersion !== projectVersion)) {
         return null;
     }
     return entry.data;
 }
-function getAnyCachedWorldbookSource(projectId, downloadUrl) {
+function getAnyCachedWorldbookSource(projectId, downloadUrl, projectVersion) {
     const cache = getCreativeWorkshopCacheStore();
     const entry = cache.worldbookSources?.[projectId];
-    return entry?.downloadUrl === downloadUrl ? entry.data : null;
+    return entry?.downloadUrl === downloadUrl && (!projectVersion || entry.projectVersion === projectVersion)
+        ? entry.data
+        : null;
 }
-function setCachedWorldbookSource(projectId, downloadUrl, data) {
+function setCachedWorldbookSource(projectId, downloadUrl, projectVersion, data) {
     const cache = pruneCreativeWorkshopCacheStore(getCreativeWorkshopCacheStore());
     cache.worldbookSources = cache.worldbookSources || {};
     cache.worldbookSources[projectId] = {
         cachedAt: Date.now(),
         downloadUrl,
+        projectVersion,
         data,
     };
     writeCreativeWorkshopCacheStore(cache);
@@ -254,18 +268,21 @@ function normalizeWorldbookSourceEntries(raw) {
 async function fetchCreativeWorkshopProjectWorldbookSource(projectDetail) {
     const projectId = _.get(projectDetail, 'project.id');
     const downloadUrl = _.get(projectDetail, 'project.downloadUrl');
+    const projectVersion = _.isString(_.get(projectDetail, 'project.version'))
+        ? String(_.get(projectDetail, 'project.version'))
+        : null;
     if (!_.isString(downloadUrl) || !downloadUrl) {
         return [];
     }
     if (_.isString(projectId) && projectId) {
-        const cached = getCachedWorldbookSource(projectId, downloadUrl);
+        const cached = getCachedWorldbookSource(projectId, downloadUrl, projectVersion || undefined);
         if (cached) {
             return cached;
         }
     }
     try {
         const response = await fetch(downloadUrl, {
-            cache: 'force-cache',
+            cache: 'no-store',
         });
         if (!response.ok) {
             throw new Error(`获取世界书原始配置失败: ${response.status}`);
@@ -273,13 +290,13 @@ async function fetchCreativeWorkshopProjectWorldbookSource(projectDetail) {
         const raw = await response.json();
         const normalized = normalizeWorldbookSourceEntries(raw);
         if (_.isString(projectId) && projectId) {
-            setCachedWorldbookSource(projectId, downloadUrl, normalized);
+            setCachedWorldbookSource(projectId, downloadUrl, projectVersion, normalized);
         }
         return normalized;
     }
     catch (error) {
         if (_.isString(projectId) && projectId) {
-            const fallback = getAnyCachedWorldbookSource(projectId, downloadUrl);
+            const fallback = getAnyCachedWorldbookSource(projectId, downloadUrl, projectVersion || undefined);
             if (fallback) {
                 console.warn('[CreativeWorkshop] 使用缓存的世界书源文件', { projectId, error });
                 return fallback;
@@ -293,10 +310,11 @@ async function fetchCreativeWorkshopProjectDetail(projectId, expectedVersion) {
     if (cached) {
         return cached;
     }
+    let receivedVersionMismatch = false;
     try {
         const versionQuery = expectedVersion ? `?v=${encodeURIComponent(expectedVersion)}` : '';
         const response = await fetch(`${getCreativeWorkshopUrl()}/api/projects/${projectId}${versionQuery}`, {
-            cache: expectedVersion ? 'force-cache' : 'no-cache',
+            cache: expectedVersion ? 'no-store' : 'no-cache',
         });
         if (!response.ok) {
             throw new Error(`获取云端项目详情失败: ${response.status}`);
@@ -304,6 +322,10 @@ async function fetchCreativeWorkshopProjectDetail(projectId, expectedVersion) {
         const data = await response.json();
         if (!data?.project) {
             throw new Error('云端项目详情数据异常');
+        }
+        if (expectedVersion && data.project.version !== expectedVersion) {
+            receivedVersionMismatch = true;
+            throw new Error(`云端项目版本不一致：期望 ${expectedVersion}，实际 ${data.project.version || '未知'}，已中止安装以避免使用旧缓存`);
         }
         const normalized = {
             project: data.project,
@@ -314,6 +336,8 @@ async function fetchCreativeWorkshopProjectDetail(projectId, expectedVersion) {
         return normalized;
     }
     catch (error) {
+        if (receivedVersionMismatch)
+            throw error;
         const fallback = getCreativeWorkshopCacheStore().projectDetails?.[projectId]?.data;
         if (fallback && (!expectedVersion || _.get(fallback, 'project.version') === expectedVersion)) {
             console.warn('[CreativeWorkshop] 使用缓存的项目详情', { projectId, expectedVersion, error });
