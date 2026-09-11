@@ -400,6 +400,73 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helve
 .admin-review-load-unchanged { margin:0 13px 13px; }
 .admin-review-unchanged [data-admin-unchanged-content] { padding:0 13px 13px; }
 
+/* P3 admin review: align the moderation workspace with the neutral parchment UI. */
+.admin-review-overlay,.admin-review-detail-overlay { padding:24px 36px; overflow:hidden; align-items:center; background:rgba(5,6,8,.78); backdrop-filter:blur(10px); }
+.admin-review-modal,.admin-review-detail-modal { width:min(100%,1240px); max-width:1240px; height:calc(100dvh - 48px); max-height:calc(100dvh - 48px); border-radius:14px; border:1px solid rgba(255,255,255,.09); background:#18191c; color:#ececea; box-shadow:0 28px 80px rgba(0,0,0,.5); animation:slideUp .18s ease; }
+.admin-review-modal .modal-header,.admin-review-detail-modal .modal-header { min-height:58px; padding:0 20px; border-bottom:1px solid rgba(255,255,255,.07); background:#18191c; }
+.admin-review-modal .modal-header h2,.admin-review-detail-modal .modal-header h2 { color:#d9d8d4; font-size:.9rem; font-weight:700; }
+.admin-review-modal .modal-header h2 i,.admin-review-detail-modal .modal-header h2 i { color:#a28b6b; }
+.admin-review-modal .close-btn,.admin-review-detail-modal .close-btn { width:38px; height:38px; border-radius:9px; color:#aaa8a3; }
+.admin-review-modal .close-btn:hover,.admin-review-detail-modal .close-btn:hover { background:rgba(255,255,255,.05); color:#ececea; }
+.admin-review-modal .modal-body,.admin-review-detail-modal .modal-body { min-height:0; padding:22px 24px 24px; background:#18191c; }
+.admin-review-queue { gap:12px; }
+.admin-review-toolbar { padding:10px 12px; border-color:rgba(255,255,255,.075); border-radius:10px; background:#1b1c1f; }
+.admin-review-sort-control { color:#8d8b86; font-size:.76rem; }
+.admin-review-sort-control select { border-color:rgba(255,255,255,.085); border-radius:8px; background:#151619; color:#cac9c5; outline:none; }
+.admin-review-sort-control select:focus { border-color:rgba(190,164,125,.42); box-shadow:0 0 0 2px rgba(190,164,125,.08); }
+.admin-review-filter-btn { border-color:rgba(255,255,255,.075); background:rgba(255,255,255,.035); color:#999792; font-size:.74rem; transition:border-color .16s ease,background .16s ease,color .16s ease; }
+.admin-review-filter-btn:hover { border-color:rgba(190,164,125,.28); color:#d7d5d0; }
+.admin-review-filter-btn.active { border-color:rgba(190,164,125,.38); background:rgba(190,164,125,.11); color:#d7c4a7; }
+.admin-review-queue-summary { padding:10px 12px; border-width:1px 0; border-style:solid; border-color:rgba(255,255,255,.065); border-radius:0; background:transparent; color:#8f8d88; font-size:.8rem; }
+.admin-review-queue-summary strong { color:#c9ae87; font-size:1.02rem; }
+.admin-review-list { gap:8px; }
+.admin-review-card { padding:12px; border-color:rgba(255,255,255,.075); border-radius:11px; background:#1b1c1f; box-shadow:0 4px 14px rgba(0,0,0,.12); transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease; }
+.admin-review-card:focus-visible { outline-color:rgba(190,164,125,.5); }
+.admin-review-card:hover { transform:translateY(-1px); border-color:rgba(190,164,125,.22); background:#1d1e21; box-shadow:0 8px 20px rgba(0,0,0,.16); }
+.admin-review-thumb { border-color:rgba(255,255,255,.07); border-radius:9px; background-color:#212226; }
+.admin-review-position { color:#bba887; background:rgba(190,164,125,.07); border-color:rgba(190,164,125,.18); }
+.admin-review-title { color:#e5e4e1; font-size:1rem; }
+.admin-review-author { color:#86847f; font-size:.76rem; }
+.admin-review-card-actions .btn-primary { border:1px solid #bca47f; background:#aa916d; color:#151619; box-shadow:none; }
+.admin-review-card-actions .btn-primary:hover { transform:none; border-color:#ccb48d; background:#bda27a; box-shadow:none; }
+.admin-review-card-actions .btn-outline,.admin-review-sticky-actions .btn-outline { border-color:rgba(255,255,255,.09); background:rgba(255,255,255,.035); color:#aaa8a3; }
+.admin-review-card-actions .btn-outline:hover,.admin-review-sticky-actions .btn-outline:hover { border-color:rgba(190,164,125,.22); background:rgba(190,164,125,.06); color:#d4c2a6; }
+.admin-review-summary { gap:13px; padding:16px; border-color:rgba(255,255,255,.075); border-radius:11px; background:#1b1c1f; }
+.admin-review-summary-heading h3 { color:#e5e4e1; font-size:1.16rem; }
+.admin-review-summary-heading > div { color:#85837e; font-size:.78rem; }
+.admin-review-signal { padding:5px 9px; border-color:rgba(255,255,255,.07); background:rgba(255,255,255,.035); color:#aaa8a3; font-size:.72rem; }
+.admin-review-signal--info { color:#c8b28f; border-color:rgba(190,164,125,.24); background:rgba(190,164,125,.07); }
+.admin-review-signal--ejs { color:#c8b8cf; border-color:rgba(190,166,204,.24); background:rgba(154,123,170,.09); }
+.admin-review-signal--good { color:#aac0aa; border-color:rgba(142,168,143,.24); background:rgba(120,151,122,.08); }
+.admin-review-signal--warning { color:#d8bf83; border-color:rgba(202,163,77,.26); background:rgba(202,163,77,.08); }
+.admin-review-description { border-color:rgba(255,255,255,.07); border-radius:9px; background:#151619; }
+.admin-review-description summary { color:#c8c6c1; }
+.admin-review-description-hint { color:#6f6d68; font-size:.69rem; }
+.admin-review-description-body { color:#aaa8a3; line-height:1.6; }
+.admin-review-sticky-actions { padding:10px; border-color:rgba(255,255,255,.08); border-radius:10px; background:rgba(24,25,28,.94); backdrop-filter:blur(14px); box-shadow:0 -10px 24px rgba(0,0,0,.2); }
+.admin-review-approve-btn { color:#c5d7c4; border-color:rgba(126,161,125,.34); background:rgba(91,126,90,.2); }
+.admin-review-approve-btn:hover { background:rgba(91,126,90,.32); }
+.admin-review-reject-btn { color:#e2aaa5; border-color:rgba(190,105,98,.32); background:rgba(125,60,55,.2); }
+.admin-review-reject-btn:hover { background:rgba(125,60,55,.34); }
+.admin-review-diff-summary { padding:14px 16px; border-color:rgba(190,164,125,.15); border-radius:11px; background:#1b1c1f; }
+.admin-review-diff-summary-head { color:#aaa8a3; }
+.admin-review-diff-summary-head strong { color:#c9ae87; font-size:1.28rem; }
+.admin-review-diff-summary-head span { color:#77756f; font-size:.76rem; }
+.admin-review-diff-counts .unchanged,.admin-review-diff-status--unchanged { color:#aaa8a3; background:rgba(255,255,255,.035); border-color:rgba(255,255,255,.08); }
+.admin-review-risk-delta strong { color:#c8c6c1; font-size:.78rem; }
+.admin-review-diff-entry { border-color:rgba(255,255,255,.075); border-radius:10px; background:#151619; }
+.admin-review-diff-fields { color:#6f6d68; font-size:.7rem; }
+.admin-review-diff-code { background:#111214; }
+.admin-review-diff-line > span { color:#66645f; }
+.admin-review-diff-line code { color:#aaa8a3; }
+.admin-review-diff-line--same code { color:#77756f; }
+.admin-review-diff-skip { color:#b39c7a; background:rgba(190,164,125,.045); }
+.admin-review-diff-empty,.admin-review-no-changes { color:#77756f; border-color:rgba(255,255,255,.08); border-radius:10px; }
+.admin-review-unchanged { border-color:rgba(255,255,255,.065); border-radius:10px; background:rgba(255,255,255,.025); }
+.admin-review-unchanged > summary { color:#aaa8a3; }
+.admin-review-unchanged > summary small { color:#66645f; }
+.admin-review-unchanged-titles span { border-radius:7px; background:rgba(255,255,255,.035); color:#8f8d88; }
+
 .admin-list-item,.admin-card { background:rgba(30,41,59,0.8); border-radius:12px; padding:12px; margin-bottom:12px; }
 .admin-list-item { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .admin-card-title { font-weight:bold; margin-bottom:4px; }
