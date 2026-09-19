@@ -38,15 +38,13 @@ Do not use the single word `staging` when more than one meaning is possible.
 | **production Worker** | Owner production Cloudflare Worker |
 | **promote to production** | PR/merge into owner main, then deploy exact merged owner-main commit |
 
-Current project staging runtime identifiers:
+Current runtime identifiers must be read from their owning source instead of copied into this SOP:
 
-```text
-staging Worker = poemofdestinycreativeworkshop-master-staging
-staging site   = workshop-test.uika.cc.cd
-Cloudflare     = Johnjohnson personal staging environment
-```
+- staging site URL and aliases: `config/workshop.json`
+- staging Worker/account/config/source policy: `.cotel/local/one-click-deploy/profiles/master-staging.json`
+- production Worker/account/config/source policy: `.cotel/local/one-click-deploy/profiles/production.json`
 
-These runtime identifiers must still be verified before deployment; they are not inferred from Git remotes.
+Verify those sources before deployment; never infer runtime identity from Git remotes or from stale documentation.
 
 ### Forbidden ambiguous reporting
 
@@ -183,60 +181,58 @@ Do not force-push either main branch merely to make history look clean.
 
 ### Release version policy
 
-Use `X.Y.Z` with these repository-specific meanings:
+Creative Workshop client SemVer and Worker/web deployment identity are separate.
 
-- `X` = breaking generation. Increment only for an externally meaningful compatibility break, such as an incompatible project format, public API/bridge contract, or required migration that makes the previous generation incompatible.
-- `Y` = feature release. Any user-facing feature addition belongs in a new minor line.
-- `Z` = hotfix/bugfix only. Patch releases must not contain new features.
+The only live client-version source is `config/workshop.json`:
 
-Current line:
+- `client.stable` = newest released client tag.
+- `client.minimum` = oldest client allowed to enter the Workshop.
+- `client.staging` = active staging-client line.
 
-```text
-owner main / production = 2.1.0
-origin/staging          = 2.2.0-dev
-```
+Do not write the current numbers again in this SOP. Read the manifest.
 
-During a feature cycle, keep the staging product version on the next minor prerelease, for example `2.2.0-dev`. Do not consume patch numbers merely to identify staging builds. Use the exact Git SHA / Worker Version to distinguish builds.
+#### Mandatory version decision
 
-Examples:
+Before touching client SemVer, ask:
 
-```text
-2.1.0      stable feature release
-2.1.1      hotfix for the 2.1 line
-2.1.2      another hotfix for the 2.1 line
-2.2.0-dev  next feature line under staging validation
-2.2.0      accepted stable feature release
-2.3.0-dev  next feature line after 2.2.0 releases
-```
+> Does this change require a SillyTavern user to change the `@version` in their Creative Workshop import in order to receive the change?
 
-A small feature is still a feature: do not ship it as `2.1.1`, `2.1.2`, etc. Internal refactoring alone does not require a major-version bump when external behavior/contracts remain compatible.
-
-#### Production hotfix while the next feature line is in staging
-
-When production is on `2.1.x` while `origin/staging` is already on `2.2.0-dev`, keep the two lines separate:
+If **no**:
 
 ```text
-production 2.1.0
-    ↓ hotfix branch from exact current production source
-2.1.1
-    ↓ merge/tag/deploy through owner main
-production 2.1.1
-
-same fix
-    ↓ forward-port / cherry-pick / recreate as appropriate
-origin/staging 2.2.0-dev
+Worker/web/backend change
+→ tests
+→ Git SHA
+→ Worker deployment
+→ Worker Version ID
+→ client stable/minimum/staging unchanged
 ```
 
-Rules:
+Examples: web UI, copy, CSS, ranking, admin pages, Worker routes, D1/R2 logic, server-side validation, server-only hotfixes.
 
-1. Start a production hotfix from the exact current production source (`upstream/main` / current stable owner tag), not from the newer feature staging line.
-2. The hotfix changes only bugfix/reliability behavior and increments `Z` (`2.1.0` → `2.1.1` → `2.1.2` ...).
-3. If runtime validation is needed while the normal staging Worker is already serving `2.2.0-dev`, use a separately named preview/hotfix Worker. Do not roll the normal staging Worker backward to `2.1.x`.
-4. After the hotfix is merged/tagged/deployed on the production line, forward-port the same logical fix into `origin/staging` so the next feature release does not reintroduce the bug.
-5. If direct cherry-pick conflicts with the newer staging line, recreate the equivalent fix there; do not merge an old production branch wholesale merely to carry one hotfix.
-6. A later production hotfix starts from the latest production patch (`2.1.1` → `2.1.2`), not from the original `2.1.0`.
+If **yes**:
 
-When the feature line is accepted, release `2.2.0`, make it the new production line, and move staging forward to `2.3.0-dev`.
+- client bugfix → patch,
+- new backwards-compatible client capability → minor,
+- incompatible client / bridge contract → major.
+
+A new `stable` release does not automatically raise `minimum`. Raise `minimum` only when older clients are genuinely unsafe or incompatible.
+
+Use exact Git SHA / Worker Version to distinguish Worker builds. Never consume client patch numbers as deployment/build counters.
+
+#### Production hotfix while a newer client line is in staging
+
+Keep the production and staging source lines separate, but decide the client bump from the artifact change:
+
+1. Start from the exact current production source.
+2. If the fix is Worker/web-only, keep all client versions unchanged.
+3. If the fix changes the production client artifact and users must update their import, create the next appropriate client release.
+4. Validate the production fix on the correct preview/hotfix path when needed; do not roll the normal staging Worker backward.
+5. Forward-port the logical fix into `origin/staging`.
+6. If cherry-pick conflicts, recreate the equivalent fix instead of merging the old production branch wholesale.
+7. Release tags are immutable.
+
+See `docs/WORKSHOP-RELEASE-SOP.md` for the complete client-release decision tree and reporting format.
 
 ## 7. Normal feature / staging-fix workflow
 
