@@ -1,6 +1,6 @@
 # Git / Staging / Release SOP
 
-This repository uses a fork-first workflow with a mandatory staging acceptance gate before owner production integration.
+This repository uses a fork-first workflow. Feature releases require the normal staging acceptance gate before owner production integration; production patch hotfixes follow the separate hotfix validation and forward-port policy below.
 
 Git repository state and runtime deployment state are separate systems. Always report and verify them separately.
 
@@ -181,9 +181,66 @@ Do not develop features directly on `origin/main`.
 
 Do not force-push either main branch merely to make history look clean.
 
-## 7. Normal feature / fix workflow
+### Release version policy
 
-This is the default workflow for ordinary changes:
+Use `X.Y.Z` with these repository-specific meanings:
+
+- `X` = breaking generation. Increment only for an externally meaningful compatibility break, such as an incompatible project format, public API/bridge contract, or required migration that makes the previous generation incompatible.
+- `Y` = feature release. Any user-facing feature addition belongs in a new minor line.
+- `Z` = hotfix/bugfix only. Patch releases must not contain new features.
+
+Current line:
+
+```text
+owner main / production = 2.1.0
+origin/staging          = 2.2.0-dev
+```
+
+During a feature cycle, keep the staging product version on the next minor prerelease, for example `2.2.0-dev`. Do not consume patch numbers merely to identify staging builds. Use the exact Git SHA / Worker Version to distinguish builds.
+
+Examples:
+
+```text
+2.1.0      stable feature release
+2.1.1      hotfix for the 2.1 line
+2.1.2      another hotfix for the 2.1 line
+2.2.0-dev  next feature line under staging validation
+2.2.0      accepted stable feature release
+2.3.0-dev  next feature line after 2.2.0 releases
+```
+
+A small feature is still a feature: do not ship it as `2.1.1`, `2.1.2`, etc. Internal refactoring alone does not require a major-version bump when external behavior/contracts remain compatible.
+
+#### Production hotfix while the next feature line is in staging
+
+When production is on `2.1.x` while `origin/staging` is already on `2.2.0-dev`, keep the two lines separate:
+
+```text
+production 2.1.0
+    ↓ hotfix branch from exact current production source
+2.1.1
+    ↓ merge/tag/deploy through owner main
+production 2.1.1
+
+same fix
+    ↓ forward-port / cherry-pick / recreate as appropriate
+origin/staging 2.2.0-dev
+```
+
+Rules:
+
+1. Start a production hotfix from the exact current production source (`upstream/main` / current stable owner tag), not from the newer feature staging line.
+2. The hotfix changes only bugfix/reliability behavior and increments `Z` (`2.1.0` → `2.1.1` → `2.1.2` ...).
+3. If runtime validation is needed while the normal staging Worker is already serving `2.2.0-dev`, use a separately named preview/hotfix Worker. Do not roll the normal staging Worker backward to `2.1.x`.
+4. After the hotfix is merged/tagged/deployed on the production line, forward-port the same logical fix into `origin/staging` so the next feature release does not reintroduce the bug.
+5. If direct cherry-pick conflicts with the newer staging line, recreate the equivalent fix there; do not merge an old production branch wholesale merely to carry one hotfix.
+6. A later production hotfix starts from the latest production patch (`2.1.1` → `2.1.2`), not from the original `2.1.0`.
+
+When the feature line is accepted, release `2.2.0`, make it the new production line, and move staging forward to `2.3.0-dev`.
+
+## 7. Normal feature / staging-fix workflow
+
+This is the default workflow for feature work and fixes targeting the active staging feature line. Production patch hotfixes are the explicit exception and follow the release-version hotfix flow above.
 
 ```text
 1. refresh upstream/main
@@ -296,20 +353,22 @@ The helper must verify the exact latest `origin/staging`, expected staging Cloud
 
 `.cotel/local/` is persistent machine-local operational state and is not the portable source of truth. `.ai-bridge/` is reserved for current-session AI handoff state only. If the helper is missing on another machine, reproduce the same fail-closed checks rather than weakening the SOP.
 
-## 10. Preview / experimental deployment exception
+## 10. Preview / experimental / hotfix-validation deployment exception
 
-A task branch may be deployed before `origin/staging` only when all of these are true:
+The normal staging Worker still follows the `origin/staging` source-of-truth rule. Separate preview Workers may be used for isolated experiments, and separate hotfix Workers may be used to validate a production patch line while `origin/staging` is already on the next feature version.
+
+For an experimental task branch, deployment before `origin/staging` is allowed only when all of these are true:
 
 - the purpose is explicitly experimental,
 - the runtime is separately named preview/temporary infrastructure,
 - it cannot be confused with the Master staging Worker,
 - the report explicitly says the code is **not in `origin/staging`**.
 
-Never use this exception silently.
+Never use these exceptions silently. A hotfix-validation Worker must be separately named and must not be presented as the normal staging Worker.
 
 ## 11. Production promotion workflow
 
-Production order is:
+For a normal feature release, production order is:
 
 ```text
 staging accepted by Master
@@ -330,18 +389,18 @@ Do not deploy production from:
 - an unmerged PR head,
 - a dirty worktree.
 
-Production should normally run an exact commit already present in owner main.
+Production should normally run an exact commit already present in owner main. A production patch hotfix also ends in owner main before production deploy, but it is validated on its own hotfix path when the normal staging Worker is already serving the next feature line.
 
 ### One-click production shortcut on the primary machine
 
-For routine Workshop production deployment after staging acceptance and owner-main promotion, use:
+For routine Workshop production deployment after the applicable validation gate and owner-main promotion, use:
 
 ```text
 C:\Project\myrepo-git\.cotel\local\CHECK_PRODUCTION.cmd
 C:\Project\myrepo-git\.cotel\local\DEPLOY_PRODUCTION.cmd
 ```
 
-These shortcuts wrap the same composable deploy engine. The normal production source is refreshed `upstream/main` after Master staging acceptance and owner-main promotion. A stable owner semver tag should anchor each released version. The helper may still select an explicitly authorized owner `release/*` branch or owner release tag for exceptional recovery work, but historical release branches are temporary workspaces rather than long-term backups.
+These shortcuts wrap the same composable deploy engine. The normal production source is refreshed `upstream/main` after the applicable validation gate and owner-main promotion: Master staging acceptance for a feature release, or the dedicated hotfix validation path for a production patch. A stable owner semver tag should anchor each released version. The helper may still select an explicitly authorized owner `release/*` branch or owner release tag for exceptional recovery work, but historical release branches are temporary workspaces rather than long-term backups.
 
 
 The production profile accepts only source selectors allowed by policy (currently `upstream/main`, `upstream/release/*`, or an owner semver release tag). The engine fetches and resolves that exact source, temporarily locks the checkout to the exact commit, verifies the expected production Cloudflare account/Worker/D1/KV/R2, checks/applies migrations, performs a Wrangler dry-run, deploys only after all checks pass, and restores the original checkout afterward. `CHECK_PRODUCTION.cmd` performs the same preflight without applying migrations or deploying.
@@ -447,7 +506,7 @@ Before production deploy:
 
 - exact owner-main commit known,
 - owner main contains intended change,
-- staging acceptance already completed unless explicitly waived,
+- feature release: staging acceptance already completed; production hotfix: hotfix validation completed under the release-version hotfix policy,
 - tests green,
 - production Cloudflare account/profile verified,
 - Worker and bindings verified,
@@ -497,7 +556,7 @@ Never let the phrase "staging done" substitute for this separation.
 
 Use the user fork for development, `origin/staging` as the Master acceptance integration branch, and owner main as the production source of truth.
 
-The normal chain is:
+The normal feature-release chain is:
 
 ```text
 task branch
