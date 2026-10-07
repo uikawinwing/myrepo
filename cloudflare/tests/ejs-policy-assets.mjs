@@ -104,19 +104,27 @@ for(const source of ['const img=document.createElement("img"); img.src=runtimeTa
   assert.ok(hint);assert.match(hint.detail,/最终图片或视频地址由运行时内容决定/);assert.match(hint.riskEvidence?.expression || '',/runtimeTarget/);assert.deepEqual(hint.riskEvidence?.candidates,[]);assert.equal(hint.line,2);
   assert.equal(report.gate,'accept');assert.equal(report.audit,'yellow');assert.equal(rules(report).includes('M4'),false);count+=8;
 }
-// #23 requirement 2: a trusted-only candidate set no longer raises AH2.
-// The target itself is still unprovable, so the auditor sees no *new* warning
-// only because every statically discoverable candidate is a trusted media host.
-noAssetReview(ejs('const fallback="https://files.catbox.moe/fallback.png"; const profile={avatarUrl:runtimeTarget};'));
-noAssetReview(ejs('const one="https://files.catbox.moe/a.png"; const two="https://i.ibb.co/b.webp"; const profile={avatarUrl:runtimeTarget};'));
-noAssetReview(ejs('const fallback="https://i.ibb.co/v.mp4"; const cfg={videoUrl:runtimeTarget};'));
-noAssetReview(ejs('const one="https://files.catbox.moe/1.png"; const gallery={images:[one]}; const cfg={gallery:runtimeTarget};'));
-// ...but a single untrusted candidate keeps AH2, and the trusted member must not
-// be reported a second time as an unknown link.
+// A trusted URL merely appearing in the same entry proves nothing about what a
+// dynamic target will load, so these must keep AH2. The entry-wide candidate
+// scrape that used to suppress this was the false negative #23 follow-up removed.
+for(const source of [
+  'const fallback="https://files.catbox.moe/fallback.png"; const profile={avatarUrl:runtimeTarget};',
+  'const one="https://files.catbox.moe/a.png"; const two="https://i.ibb.co/b.webp"; const profile={avatarUrl:runtimeTarget};',
+  'const fallback="https://i.ibb.co/v.mp4"; const cfg={videoUrl:runtimeTarget};',
+  'const one="https://files.catbox.moe/1.png"; const gallery={images:[one]}; const cfg={gallery:runtimeTarget};',
+  'const randomFallback="https://files.catbox.moe/safe.png"; const img=document.createElement("img"); img.src=runtimeTarget;',
+]) {
+  const report=ejs(source);
+  assert.ok(report.findings.some(finding=>finding.ruleId==='AH2'&&finding.riskEvidence?.usage==='media'),`${source} -> ${JSON.stringify(report.findings)}`);
+  assert.equal(report.audit,'yellow');count+=2;
+}
+// A trusted member must never be reported a second time as an unknown link,
+// even while its sibling keeps the entry yellow.
 const mixedCandidate=ejs('const one="https://files.catbox.moe/a.png"; const two="https://evil.example/b.png"; const profile={avatarUrl:runtimeTarget};');
-const mixedCandidateHint=mixedCandidate.findings.find(finding=>finding.ruleId==='AH2'&&finding.riskEvidence?.usage==='media');
-assert.ok(mixedCandidateHint);assert.deepEqual(mixedCandidateHint.riskEvidence?.candidates,['https://files.catbox.moe/a.png','https://evil.example/b.png']);
-assert.equal(mixedCandidate.findings.filter(finding=>finding.ruleId==='U2'&&finding.riskEvidence?.target==='https://files.catbox.moe/a.png').length,0,JSON.stringify(mixedCandidate.findings));count+=3;
+assert.ok(mixedCandidate.findings.some(finding=>finding.ruleId==='AH2'&&finding.riskEvidence?.usage==='media'),JSON.stringify(mixedCandidate.findings));
+// The trusted host is a bare constant here, so its usage is unknown and it stays
+// an ordinary unverified link. Trust is only for provable media usage.
+assert.ok(mixedCandidate.findings.some(finding=>finding.ruleId==='U2'&&finding.riskEvidence?.target==='https://files.catbox.moe/a.png'),JSON.stringify(mixedCandidate.findings));count+=2;
 for(const source of ['const img=document.createElement("img"); img.src="https://files.catbox.moe/a.png";','const profile={avatarUrl:"https://i.ibb.co/a.png"};','const urls = {one:"https://files.catbox.moe/a.png",two:"https://files.catbox.moe/b.png"}; image.src = urls[mood];','const runtimeUrl=runtimeTarget;']) {
   const report=ejs(source);assert.equal(report.findings.some(finding=>finding.ruleId==='AH2'&&finding.riskEvidence?.usage==='media'),false);count++;
 }

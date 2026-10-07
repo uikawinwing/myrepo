@@ -103,14 +103,20 @@ assert.equal(normalizeProjectDiscordThreadUrl(`http://discord.com/channels/${ALL
 assert.equal(normalizeProjectDiscordThreadUrl(`https://example.com/channels/${ALLOWED_GUILD}/${ALLOWED_GUILD}1`, ALLOWED_GUILDS).ok, false, 'other host');
 count += 7;
 
-// A configured thread is a trusted community link, so the auditor is not told to
-// go confirm an unknown generic link.
-const threadInEjs = ejs(`const link = "${threadUrl}";`);
-assert.equal(rules(threadInEjs).includes('U2'), false, JSON.stringify(threadInEjs.findings));
-assert.equal(mediaAh2(threadInEjs).length, 0);
-count += 2;
+// Only the dedicated project field is exempt, and only because the validator
+// above already confirmed the configured guild. A thread URL appearing inside
+// arbitrary EJS / worldbook / regex content has no such provenance, so it stays
+// an ordinary unverified link. Trusting it here would let a creator route users
+// to a foreign server without the auditor ever seeing it.
+assert.ok(rules(ejs(`const link = "${threadUrl}";`)).includes('U2'), 'a thread URL in EJS content is not exempt');
+assert.ok(rules(ejs(`const link = "${threadUrl}";`)).includes('U2'), 'also for the configured guild shape');
+assert.ok(
+  rules(check(`see https://discord.com/channels/${ALLOWED_GUILD}/${ALLOWED_GUILD}1 for details`, 'worldbook')).includes('U2'),
+  'a thread URL in worldbook text is not exempt',
+);
+count += 3;
 
-// An invite or a message link inside content is still an ordinary unverified link.
+// Invites, message links and other hosts are U2 in content too.
 assert.ok(rules(ejs('const link = "https://discord.gg/abc123";')).includes('U2'));
 assert.ok(rules(ejs(`const link = "https://discord.com/channels/${ALLOWED_GUILD}/${ALLOWED_GUILD}1/42";`)).includes('U2'));
 count += 2;
@@ -259,15 +265,25 @@ const mixedReport = check(mixedBlock);
 assert.ok(mediaAh2(mixedReport).length > 0, JSON.stringify(mixedReport.findings));
 count++;
 
-// A trusted-only candidate set no longer raises AH2, in and out of CharInfo.
+// A target whose own provable values are all trusted media is still clean. This
+// is NOT the entry-wide scrape: `urls[mood]` reduces to its own literal values,
+// so the checker can actually prove what will be loaded.
+{
+  const source = 'const urls = {one:"https://files.catbox.moe/a.png",two:"https://files.catbox.moe/b.png"}; image.src = urls[mood];';
+  const report = ejs(source);
+  assert.equal(mediaAh2(report).length, 0, JSON.stringify(report.findings));
+  assert.equal(report.audit, 'green', JSON.stringify(report.findings));
+  count += 2;
+}
+
+// The same trusted values as bare, unrelated constants prove nothing about a
+// runtime target, so they must not launder it.
 for (const source of [
   'const fallback="https://files.catbox.moe/fallback.png"; const profile={avatarUrl:runtimeTarget};',
   'const one="https://files.catbox.moe/a.png"; const two="https://i.ibb.co/b.webp"; const profile={avatarUrl:runtimeTarget};',
-  'const urls = {one:"https://files.catbox.moe/a.png",two:"https://files.catbox.moe/b.png"}; image.src = urls[mood];',
 ]) {
   const report = ejs(source);
-  assert.equal(mediaAh2(report).length, 0, `${source} -> ${JSON.stringify(report.findings)}`);
-  assert.equal(report.audit, 'green', `${source} -> ${JSON.stringify(report.findings)}`);
+  assert.ok(mediaAh2(report).length > 0, `${source} -> ${JSON.stringify(report.findings)}`);
   count++;
 }
 
@@ -293,6 +309,24 @@ assert.ok(
 );
 count++;
 
+// P1-3 regression: the checker stays quiet about trusted CharInfo media, so the
+// server-side collector must not put the same URL back into the review set as an
+// unknown worldbook link. This is the gap that would have re-created the exact
+// audit noise #23 set out to remove.
+{
+  const records = collectProjectExternalLinks({ worldbookEntries: [{ content: trustedBlock }] });
+  const trustedMedia = trustedExternalLinks(records).map(record => record.url);
+  assert.ok(trustedMedia.length > 0, JSON.stringify(records));
+  const reviewSet = externalLinksNeedingReview(records);
+  assert.deepEqual(reviewSet, [], `trusted CharInfo media leaked into the review set: ${JSON.stringify(reviewSet)}`);
+  // The URL must be present exactly once, as proven media, not twice.
+  const occurrences = records.filter(record => record.url === TRUSTED_GALLERY);
+  assert.equal(occurrences.length, 1, `duplicated record: ${JSON.stringify(occurrences)}`);
+  assert.equal(occurrences[0].usage, LINK_USAGE.MEDIA);
+  assert.equal(occurrences[0].trust, LINK_TRUST.TRUSTED);
+  count += 4;
+}
+
 // ---------------------------------------------------------------- severity matrix
 
 const severityCases = [
@@ -309,5 +343,21 @@ for (const [url, expected] of severityCases) {
 const navigated = ejs('window.open("https://files.catbox.moe/a.png");');
 assert.ok(rules(navigated).includes('U2'), JSON.stringify(navigated.findings));
 count++;
+
+// P0-1 regression: an unrelated trusted URL in the same entry must not wash the
+// dynamic target clean. The loaded value here is completely unknown.
+for (const source of [
+  'const randomFallback="https://files.catbox.moe/safe.png"; const img=document.createElement("img"); img.src=runtimeTarget;',
+  'const one="https://files.catbox.moe/a.png"; const two="https://i.ibb.co/b.webp"; const profile={avatarUrl:runtimeTarget};',
+  'const fallback="https://files.catbox.moe/fallback.png"; const cfg={videoUrl:runtimeTarget};',
+]) {
+  const report = ejs(source);
+  assert.ok(
+    mediaAh2(report).length > 0,
+    `an unrelated trusted URL suppressed AH2: ${source} -> ${JSON.stringify(report.findings)}`,
+  );
+  assert.equal(report.audit, 'yellow');
+  count += 2;
+}
 
 console.log(`external-link policy matrix: ${count} assertions passed`);

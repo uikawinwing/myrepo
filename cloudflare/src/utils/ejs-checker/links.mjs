@@ -3,8 +3,6 @@ import { buildScopes, resolveBinding } from './scope.mjs';
 import { inspectCharInfoManagedV2Block, trustedStaticMediaUrl } from './policy-config.mjs';
 import { firstAttributeLocations } from './source-units.mjs';
 import {
-  DISCORD_HOSTS,
-  DISCORD_SNOWFLAKE_PATTERN,
   LINK_TRUST,
   classifyDynamicMediaCandidates,
   isIpHost,
@@ -176,7 +174,6 @@ function directUrls(content) {
   while((match=pattern.exec(content)))items.push({url:match[0].replace(/[;,\]}]+$/,''),index:match.index,end:pattern.lastIndex});
   return items;
 }
-function sourceUrlCandidates(content,limit=12) { return [...new Set(directUrls(content).map(item=>item.url))].slice(0,limit); }
 function parsedUrl(value) { try { return new URL(value.startsWith('//')?'https:'+value:value); } catch { return null; } }
 function external(value) { const url=parsedUrl(value);return url&&['http:','https:'].includes(url.protocol); }
 function ipHost(host) {return isIpHost(host);}
@@ -196,21 +193,18 @@ function isTrustedMediaTarget(target, mediaValues) {
 }
 
 /**
- * Shape check for a project community thread URL.
+ * The generic external-link checker never treats a Discord URL as trusted.
  *
- * This deliberately does NOT apply the configured-guild rule: the checker is
- * bundled into the offline browser asset and must not depend on server config.
- * A structurally valid thread URL is therefore not re-reported as an unknown
- * generic link, while invites, message links and malformed values still are.
- * The authoritative guild check stays in the project field validator.
+ * Only the dedicated `project.discordThreadUrl` field is exempt, and only after
+ * the project validator has confirmed the configured guild. A `discord.com`
+ * thread URL appearing inside arbitrary EJS / worldbook / regex content has no
+ * such provenance, so it stays an ordinary unverified link (U2). Trusting it
+ * here would let any creator smuggle a foreign-server link past the auditor.
+ *
+ * The exemption is therefore applied at the project-field level, where the
+ * guild is known, and never in this generic severity pass.
  */
-function isValidatedProjectThreadUrl(url) {
-  if (url.protocol !== 'https:') return false;
-  if (!DISCORD_HOSTS.includes(url.hostname.toLowerCase())) return false;
-  const parts = url.pathname.split('/').filter(Boolean);
-  if (parts.length !== 3 || parts[0] !== 'channels') return false;
-  return DISCORD_SNOWFLAKE_PATTERN.test(parts[1]) && DISCORD_SNOWFLAKE_PATTERN.test(parts[2]);
-}
+const GENERIC_LINK_EXEMPTIONS = new Set();
 
 export function inspectExternalLinks(entry,parsed) {
   const source=String(entry.rawContent??entry.content??''), targets=[],hints=[],covered=[],seen=new Set();
@@ -251,15 +245,20 @@ export function inspectExternalLinks(entry,parsed) {
         // there is code we cannot attribute, so it keeps the warning even though
         // the profile happens to list trusted media.
         if(charInfoBlock&&!generatedCharInfoMedia){hints.push({ruleId:'AH2',severity:'hint',title:'媒体来源需要人工确认',index,detail:'最终图片或视频地址由运行时内容决定，自动检查无法确定实际会加载哪个地址。',suggestion:'当前条目位于角色立绘托管区块内，但不是可确认的立绘媒体代码。请说明这段代码实际会加载哪个地址。',extra:{riskEvidence:{action:'resource',usage:'media',target:'dynamic',expression:expressionEvidence(node),candidates:charInfoBlock.mediaUrls}}});continue;}
-        const candidates=generatedCharInfoMedia&&charInfoBlock.mediaUrls.length?charInfoBlock.mediaUrls:sourceUrlCandidates(source);
-        // Any candidate the shared policy accepts as trusted media is recorded
-        // as media evidence, so the final pass does not report it a second time
-        // as an unknown link when it visits the same literal in another unit.
-        for(const candidate of candidates)if(isTrustedStaticMediaUrl(candidate))mediaValues.add(candidate);
-        // AH2 is suppressed only when every statically discoverable candidate is
-        // trusted. One untrusted member, or no determinable target, keeps it.
-        if(classifyDynamicMediaCandidates(candidates).trust===LINK_TRUST.TRUSTED)continue;
-        hints.push({ruleId:'AH2',severity:'hint',title:'媒体来源需要人工确认',index,detail:'最终图片或视频地址由运行时内容决定，自动检查无法确定实际会加载哪个地址。',suggestion:candidates.length?'请核对下方 URL 候选与这段媒体逻辑的实际用途；如果候选与实际地址不同，请 Creator 说明最终来源。':'当前条目没有可直接读出的 URL。请 Creator 提供实际图片/视频地址或来源规则后再确认。',extra:{riskEvidence:{action:'resource',usage:'media',target:'dynamic',expression:expressionEvidence(node),candidates}}});
+        const candidates=generatedCharInfoMedia&&charInfoBlock.mediaUrls.length?charInfoBlock.mediaUrls:null;
+        // Outside the managed CharInfo block we have no proof that any URL in
+        // this entry can actually reach this target, so there is no candidate
+        // set to justify suppressing AH2. A trusted URL merely appearing
+        // elsewhere in the entry says nothing about what this target loads.
+        //
+        // Inside the block, the profile media *is* the provable candidate set,
+        // but only for the block's own generated media nodes.
+        const suppressible=Boolean(generatedCharInfoMedia)&&classifyDynamicMediaCandidates(candidates).trust===LINK_TRUST.TRUSTED;
+        if(suppressible){
+          for(const candidate of candidates)if(isTrustedStaticMediaUrl(candidate))mediaValues.add(candidate);
+          continue;
+        }
+        hints.push({ruleId:'AH2',severity:'hint',title:'媒体来源需要人工确认',index,detail:'最终图片或视频地址由运行时内容决定，自动检查无法确定实际会加载哪个地址。',suggestion:candidates?.length?'请核对下方 URL 候选与这段媒体逻辑的实际用途；如果候选与实际地址不同，请 Creator 说明最终来源。':'当前条目没有可直接读出的 URL。请 Creator 提供实际图片/视频地址或来源规则后再确认。',extra:{riskEvidence:{action:'resource',usage:'media',target:'dynamic',expression:expressionEvidence(node),candidates:candidates??[]}}});
       }
     }
     for(const {node,scope} of analysis.nodes) {
@@ -335,7 +334,7 @@ export function inspectExternalLinks(entry,parsed) {
     if(dynamic)findings.push({ruleId:'U5',severity:'warn',title:'远程目标包含运行时替换内容',index:target.index,detail:target.value,suggestion:'请提供所有可能访问的目标，或向审核员说明动态目标的来源和用途。',extra});
     if(!dynamic&&isTrustedMediaTarget(target,mediaValues))continue;
     const official=OFFICIAL_URL_RULES.some(rule=>url.hostname.toLowerCase()===rule.host&&rule.path.test(url.pathname));
-    const ruleId=isValidatedProjectThreadUrl(url)?null:ipHost(url.hostname)?'U4':url.protocol==='http:'?'U3':official?null:'U2';
+    const ruleId=GENERIC_LINK_EXEMPTIONS.has(url.href)?null:ipHost(url.hostname)?'U4':url.protocol==='http:'?'U3':official?null:'U2';
     if(ruleId)findings.push({ruleId,severity:'warn',title:ruleId==='U4'?'外部目标使用 IP 地址':ruleId==='U3'?'外部目标使用 HTTP':'外部目标需要确认来源',index:target.index,detail:target.value,suggestion:target.usage==='navigation'?'请向审核员说明用户将被带往哪里，以及为什么需要这个跳转。':'请确认这个目标是项目需要的资源来源；这条提示本身不代表违规。',extra});
   }
   return findings;
