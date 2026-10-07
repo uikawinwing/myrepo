@@ -158,11 +158,97 @@ const collectorCases = [
 for (const testCase of collectorCases) {
   const records = collectProjectExternalLinks({ allowedGuildIds: ALLOWED_GUILDS, ...testCase.input });
   for (const [source, expectedUrls] of Object.entries(testCase.expect)) {
-    const actual = records.filter(record => record.source === source).map(record => record.url);
+    const actual = records.filter(record => record.sources.includes(source)).map(record => record.url);
     assert.deepEqual(actual, expectedUrls, `${testCase.label}: ${JSON.stringify(records)}`);
   }
   count += Object.keys(testCase.expect).length;
 }
+
+// ---------------------------------------------------------------- #23 final edge case
+//
+// A thread URL that already passed the dedicated project field validator must not
+// come back as an untrusted description/precautions record for the same
+// normalized URL. These are one link, not two.
+{
+  const reviewUrls = input => externalLinksNeedingReview(
+    collectProjectExternalLinks({ allowedGuildIds: ALLOWED_GUILDS, ...input }),
+  ).map(record => record.url);
+
+  // 1. same validated thread in description + project field
+  const inDescription = reviewUrls({ description: `加入讨论：${threadUrl}`, discordThreadUrl: threadUrl });
+  assert.equal(inDescription.includes(threadUrl), false, `description duplicate: ${JSON.stringify(inDescription)}`);
+
+  // 2. same validated thread in precautions + project field
+  const inPrecautions = reviewUrls({ precautions: `反馈请到 ${threadUrl}`, discordThreadUrl: threadUrl });
+  assert.equal(inPrecautions.includes(threadUrl), false, `precautions duplicate: ${JSON.stringify(inPrecautions)}`);
+
+  // 3. both, plus the project field: one consistent classification, no noise
+  const bothRecords = collectProjectExternalLinks({
+    description: `加入讨论：${threadUrl}`,
+    precautions: `也在这里 ${threadUrl}`,
+    discordThreadUrl: threadUrl,
+    allowedGuildIds: ALLOWED_GUILDS,
+  });
+  const threadRecords = bothRecords.filter(record => record.url === threadUrl);
+  assert.equal(threadRecords.length, 1, `contradictory duplicate pair: ${JSON.stringify(bothRecords)}`);
+  assert.equal(threadRecords[0].trust, LINK_TRUST.TRUSTED);
+  assert.equal(threadRecords[0].source, LINK_SOURCE.DISCORD_THREAD);
+  assert.deepEqual([...threadRecords[0].sources].sort(), [
+    LINK_SOURCE.DESCRIPTION,
+    LINK_SOURCE.DISCORD_THREAD,
+    LINK_SOURCE.PRECAUTIONS,
+  ].sort(), 'every sighting must be preserved as source metadata');
+  assert.equal(externalLinksNeedingReview(bothRecords).length, 0, JSON.stringify(externalLinksNeedingReview(bothRecords)));
+  count += 4;
+
+  // 4/5/6. the same shapes in description are still reviewed when the project
+  // field never validated them.
+  const wrongGuild = `https://discord.com/channels/${OTHER_GUILD}/${OTHER_GUILD}1`;
+  for (const url of [
+    wrongGuild,
+    'https://discord.gg/abc123',
+    `https://discord.com/channels/${ALLOWED_GUILD}/${ALLOWED_GUILD}1/42`,
+  ]) {
+    const urls = reviewUrls({ description: `see ${url}` });
+    assert.ok(urls.includes(url), `${url} must still need review: ${JSON.stringify(urls)}`);
+    count++;
+  }
+
+  // A project field that is present but invalid must not lend trust to anything.
+  const withBadField = reviewUrls({
+    description: `see ${wrongGuild}`,
+    discordThreadUrl: wrongGuild,
+    allowedGuildIds: ALLOWED_GUILDS,
+  });
+  assert.ok(withBadField.includes(wrongGuild), `rejected project field must not trust its copy: ${JSON.stringify(withBadField)}`);
+  count++;
+}
+
+// 7. a Discord thread URL inside content stays U2 and must not inherit trust from
+// an unrelated, genuinely validated project thread.
+{
+  const otherThread = `https://discord.com/channels/${OTHER_GUILD}/${OTHER_GUILD}2`;
+  const records = collectProjectExternalLinks({
+    discordThreadUrl: threadUrl,
+    allowedGuildIds: ALLOWED_GUILDS,
+    worldbookEntries: [{ content: `join ${otherThread}` }],
+    regexEntries: [{ replaceString: `or ${otherThread}` }],
+  });
+  const review = externalLinksNeedingReview(records).map(record => record.url);
+  assert.ok(review.includes(otherThread), `content thread must be reviewed: ${JSON.stringify(review)}`);
+  assert.equal(review.includes(threadUrl), false, 'the validated field thread stays trusted');
+  assert.equal(records.filter(record => record.url === otherThread).every(record => record.trust !== LINK_TRUST.TRUSTED), true);
+
+  assert.ok(rules(check(`const link = "${otherThread}";`, 'worldbook')).includes('U2'), 'worldbook content thread must be U2');
+  assert.ok(rules(check(`replace ${otherThread} here`, 'regex')).includes('U2'), 'regex content thread must be U2');
+  count += 5;
+}
+
+// 8. no trusted/untrusted contradictory pair for one normalized URL, across a
+// case where the same asset is a proven media value and also mentioned in prose.
+// 8. no trusted/untrusted contradictory pair for one normalized URL, across a
+// case where the same asset is a proven media value and also mentioned in prose.
+// (Asserted after charInfoBlock / TRUSTED_GALLERY are defined below.)
 
 // Trusted links stay out of the review set; untrusted ones stay in.
 const mixedRecords = collectProjectExternalLinks({
@@ -243,6 +329,21 @@ function charInfoBlock(mediaUrls) {
 
 const TRUSTED_GALLERY = 'https://i.ibb.co/YTpkjhVt/file-00000000e0bc81fda16e63b1a9c1ba24.png';
 const trustedBlock = charInfoBlock([TRUSTED_GALLERY]);
+
+// 8. no trusted/untrusted contradictory pair for one normalized URL when the same
+// asset is both a proven media value and mentioned in prose.
+{
+  const records = collectProjectExternalLinks({
+    description: `cover ${TRUSTED_GALLERY}`,
+    worldbookEntries: [{ content: trustedBlock }],
+  });
+  const gallery = records.filter(record => record.url === TRUSTED_GALLERY);
+  assert.equal(gallery.length, 1, `duplicated record: ${JSON.stringify(records)}`);
+  assert.equal(gallery[0].trust, LINK_TRUST.TRUSTED);
+  assert.ok(gallery[0].sources.includes(LINK_SOURCE.DESCRIPTION));
+  assert.equal(externalLinksNeedingReview(records).length, 0, JSON.stringify(externalLinksNeedingReview(records)));
+  count += 4;
+}
 
 // A trusted CharInfo media block produces no yellow audit signal at all.
 const trustedReport = check(trustedBlock);
