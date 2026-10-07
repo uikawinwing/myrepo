@@ -2,6 +2,14 @@ import { parseFragment } from 'parse5';
 import { buildScopes, resolveBinding } from './scope.mjs';
 import { inspectCharInfoManagedV2Block, trustedStaticMediaUrl } from './policy-config.mjs';
 import { firstAttributeLocations } from './source-units.mjs';
+import {
+  DISCORD_HOSTS,
+  DISCORD_SNOWFLAKE_PATTERN,
+  LINK_TRUST,
+  classifyDynamicMediaCandidates,
+  isIpHost,
+  isTrustedStaticMediaUrl,
+} from '../external-links/policy.mjs';
 
 const OFFICIAL_URL_RULES = [
   { host:'testingcf.jsdelivr.net', path:/^\/gh\/StageDog\/tavern_resource(?:\/|$)/i },
@@ -171,10 +179,48 @@ function directUrls(content) {
 function sourceUrlCandidates(content,limit=12) { return [...new Set(directUrls(content).map(item=>item.url))].slice(0,limit); }
 function parsedUrl(value) { try { return new URL(value.startsWith('//')?'https:'+value:value); } catch { return null; } }
 function external(value) { const url=parsedUrl(value);return url&&['http:','https:'].includes(url.protocol); }
-function ipHost(host) {return host.includes(':')||/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);}
+function ipHost(host) {return isIpHost(host);}
+
+/**
+ * A trusted media host is only trusted when the value is really used as media.
+ * A bare constant whose usage the checker could not determine is still media
+ * evidence when the same value feeds a known media context, so a CharInfo-style
+ * fallback does not get double-reported as an unknown link.
+ */
+function isTrustedMediaTarget(target, mediaValues) {
+  if (trustedStaticMediaUrl(target.value, target.usage)) return true;
+  if (target.usage === 'unknown' && mediaValues.has(target.value)) {
+    return trustedStaticMediaUrl(target.value, 'media');
+  }
+  return false;
+}
+
+/**
+ * Shape check for a project community thread URL.
+ *
+ * This deliberately does NOT apply the configured-guild rule: the checker is
+ * bundled into the offline browser asset and must not depend on server config.
+ * A structurally valid thread URL is therefore not re-reported as an unknown
+ * generic link, while invites, message links and malformed values still are.
+ * The authoritative guild check stays in the project field validator.
+ */
+function isValidatedProjectThreadUrl(url) {
+  if (url.protocol !== 'https:') return false;
+  if (!DISCORD_HOSTS.includes(url.hostname.toLowerCase())) return false;
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts.length !== 3 || parts[0] !== 'channels') return false;
+  return DISCORD_SNOWFLAKE_PATTERN.test(parts[1]) && DISCORD_SNOWFLAKE_PATTERN.test(parts[2]);
+}
 
 export function inspectExternalLinks(entry,parsed) {
   const source=String(entry.rawContent??entry.content??''), targets=[],hints=[],covered=[],seen=new Set();
+  // Values proven to feed a media context anywhere in the entry, plus the
+  // candidates the shared policy accepted for each managed CharInfo media node.
+  //
+  // Scoped per CharInfo block on purpose: seeding the whole entry would let a
+  // single trusted media URL vouch for an unrelated dynamic target, such as an
+  // injected `img.src = runtimeTarget` inside an otherwise trusted block.
+  const mediaValues=new Set();
   const addTarget=(value,index,usage,action,expression='')=>{
     if(!external(value))return;
     const key=index+'|'+value+'|'+usage;if(seen.has(key))return;seen.add(key);
@@ -183,7 +229,7 @@ export function inspectExternalLinks(entry,parsed) {
   for(const unit of parsed.units??[]) {
     if(!unit.ast)continue;
     const analysis=buildScopes(unit),parents=new WeakMap(analysis.nodes.map(item=>[item.node,item.parent]));
-    const navigation=new Set(),networkCalls=new Set(),mediaValues=new Set();
+    const navigation=new Set(),networkCalls=new Set();
     for(const {node,scope,parent} of analysis.nodes) {
       if(!unit.sourceMap.isOriginal(node.start)||!parent||!((parent.type==='AssignmentExpression'&&parent.right===node)||(parent.type==='Property'&&parent.value===node)||(parent.type==='VariableDeclarator'&&parent.init===node))||!mediaContext(node,scope,parents,analysis))continue;
       const values=staticStringValues(node,analysis,scope);
@@ -193,8 +239,26 @@ export function inspectExternalLinks(entry,parsed) {
           && !(node.type==='NewExpression'&&node.callee.type==='Identifier'&&node.callee.name==='Image'&&!resolveBinding(scope,'Image'))) {
         const index=unit.sourceMap.map(node.start);
         const charInfoBlock=inspectCharInfoManagedV2Block(source,index);
-        const candidates=charInfoBlock?.mediaUrls?.length?charInfoBlock.mediaUrls:sourceUrlCandidates(source);
-        if(charInfoBlock&&isGeneratedCharInfoMediaNode(node,parents)&&candidates.length&&candidates.every(value=>trustedStaticMediaUrl(value,'media')))continue;
+        const generatedCharInfoMedia=Boolean(charInfoBlock)&&isGeneratedCharInfoMediaNode(node,parents);
+        // Shared policy, applied to every dynamic media target, not only to the
+        // CharInfo block: suppress AH2 only when every statically discoverable
+        // candidate is trusted. An empty set, or any untrusted/unknown member,
+        // keeps the warning because a trusted URL appearing somewhere does not
+        // prove it is the value that will actually be loaded.
+        //
+        // Inside a managed CharInfo block only the block's own generated media
+        // nodes may rely on the block's trusted profile media. Any other node
+        // there is code we cannot attribute, so it keeps the warning even though
+        // the profile happens to list trusted media.
+        if(charInfoBlock&&!generatedCharInfoMedia){hints.push({ruleId:'AH2',severity:'hint',title:'媒体来源需要人工确认',index,detail:'最终图片或视频地址由运行时内容决定，自动检查无法确定实际会加载哪个地址。',suggestion:'当前条目位于角色立绘托管区块内，但不是可确认的立绘媒体代码。请说明这段代码实际会加载哪个地址。',extra:{riskEvidence:{action:'resource',usage:'media',target:'dynamic',expression:expressionEvidence(node),candidates:charInfoBlock.mediaUrls}}});continue;}
+        const candidates=generatedCharInfoMedia&&charInfoBlock.mediaUrls.length?charInfoBlock.mediaUrls:sourceUrlCandidates(source);
+        // Any candidate the shared policy accepts as trusted media is recorded
+        // as media evidence, so the final pass does not report it a second time
+        // as an unknown link when it visits the same literal in another unit.
+        for(const candidate of candidates)if(isTrustedStaticMediaUrl(candidate))mediaValues.add(candidate);
+        // AH2 is suppressed only when every statically discoverable candidate is
+        // trusted. One untrusted member, or no determinable target, keeps it.
+        if(classifyDynamicMediaCandidates(candidates).trust===LINK_TRUST.TRUSTED)continue;
         hints.push({ruleId:'AH2',severity:'hint',title:'媒体来源需要人工确认',index,detail:'最终图片或视频地址由运行时内容决定，自动检查无法确定实际会加载哪个地址。',suggestion:candidates.length?'请核对下方 URL 候选与这段媒体逻辑的实际用途；如果候选与实际地址不同，请 Creator 说明最终来源。':'当前条目没有可直接读出的 URL。请 Creator 提供实际图片/视频地址或来源规则后再确认。',extra:{riskEvidence:{action:'resource',usage:'media',target:'dynamic',expression:expressionEvidence(node),candidates}}});
       }
     }
@@ -269,9 +333,9 @@ export function inspectExternalLinks(entry,parsed) {
     if(/^http:\/\/www\.w3\.org\/(?:2000\/svg|1999\/xlink)$/i.test(target.value))continue;
     const extra={riskEvidence:{action:target.action,usage:target.usage,target:target.value,expression:target.expression}};
     if(dynamic)findings.push({ruleId:'U5',severity:'warn',title:'远程目标包含运行时替换内容',index:target.index,detail:target.value,suggestion:'请提供所有可能访问的目标，或向审核员说明动态目标的来源和用途。',extra});
-    if(!dynamic&&trustedStaticMediaUrl(target.value,target.usage))continue;
+    if(!dynamic&&isTrustedMediaTarget(target,mediaValues))continue;
     const official=OFFICIAL_URL_RULES.some(rule=>url.hostname.toLowerCase()===rule.host&&rule.path.test(url.pathname));
-    const ruleId=ipHost(url.hostname)?'U4':url.protocol==='http:'?'U3':official?null:'U2';
+    const ruleId=isValidatedProjectThreadUrl(url)?null:ipHost(url.hostname)?'U4':url.protocol==='http:'?'U3':official?null:'U2';
     if(ruleId)findings.push({ruleId,severity:'warn',title:ruleId==='U4'?'外部目标使用 IP 地址':ruleId==='U3'?'外部目标使用 HTTP':'外部目标需要确认来源',index:target.index,detail:target.value,suggestion:target.usage==='navigation'?'请向审核员说明用户将被带往哪里，以及为什么需要这个跳转。':'请确认这个目标是项目需要的资源来源；这条提示本身不代表违规。',extra});
   }
   return findings;

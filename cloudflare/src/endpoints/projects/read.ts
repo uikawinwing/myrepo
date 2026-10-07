@@ -7,6 +7,12 @@ import { getDiscoveryRotationKey } from '../../utils/project-daily-rankings';
 import { getCurrentUserFromRequest } from '../../utils/jwt';
 import { attachWorldbookEjsLengthEstimates } from '../../utils/project-entry-estimates';
 import { parseRegexEntriesPreview, parseWorldbookEntriesPreview } from '../../utils/project-preview';
+import {
+  collectProjectExternalLinks,
+  externalLinksNeedingReview,
+  groupExternalLinksByHostname,
+} from '../../utils/external-links/collect.mjs';
+import { getAllowedProjectDiscordGuildIds } from '../../utils/project-discord';
 import { readProjectContentForEdit } from './content';
 import { r2Storage } from '../../utils/r2';
 import { normalizeProjectVersionBase } from '../../utils/version.js';
@@ -463,6 +469,31 @@ async function readProjectPreview(
 }
 
 /**
+ * One external-link result for the whole project, shared by Project Detail and
+ * the Audit Center so the two can never disagree about which fields to inspect
+ * or how to classify a link.
+ */
+function buildProjectExternalLinkSummary(
+  project: { description?: string | null; precautions?: string | null; discordThreadUrl?: string | null },
+  preview: { worldbookEntriesPreview: unknown[]; regexEntriesPreview: unknown[] },
+) {
+  const records = collectProjectExternalLinks({
+    description: project.description || '',
+    precautions: project.precautions || '',
+    discordThreadUrl: project.discordThreadUrl || null,
+    allowedGuildIds: getAllowedProjectDiscordGuildIds(),
+    worldbookEntries: preview.worldbookEntriesPreview as never,
+    regexEntries: preview.regexEntriesPreview as never,
+  });
+
+  return {
+    externalLinkRecords: records,
+    externalLinksNeedingReview: externalLinksNeedingReview(records),
+    externalLinkGroups: groupExternalLinksByHostname(records),
+  };
+}
+
+/**
  * 获取项目详情
  */
 /**
@@ -612,6 +643,9 @@ export class ProjectFetch extends OpenAPIRoute {
       },
       worldbookEntriesPreview: preview.worldbookEntriesPreview,
       regexEntriesPreview: preview.regexEntriesPreview,
+      // Single shared result: the detail panel and the Audit Center both read
+      // this instead of collecting fields independently.
+      ...buildProjectExternalLinkSummary(project, preview),
     };
   }
 }
