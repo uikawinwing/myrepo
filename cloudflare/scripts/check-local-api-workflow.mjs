@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 
-const BASE_URL = 'http://127.0.0.1:8791';
+const BASE_URL = process.env.WORKSHOP_LOCAL_WORKER || `http://127.0.0.1:${process.env.WORKSHOP_LOCAL_API_PORT || 8791}`;
 const SIGNING_VALUE = 'cw-local-api-test';
 
 function encodeJson(value) {
@@ -223,7 +223,7 @@ try {
     body: { action: 'approve', expectedRevision: firstReviewRevision, reviewToken: (await api(`/api/admin/review/${publishedId}`, { token: adminToken })).reviewToken },
   });
 
-  const approved = await api(`/api/projects/${publishedId}`);
+  const approved = await api(`/api/projects/${publishedId}`, { token: creatorToken });
   assert.equal(approved.project.status, 'approved');
   assert.equal(approved.project.isPublished, true);
   assert.equal(approved.project.version, '1.0.0');
@@ -242,7 +242,7 @@ try {
     expected: 409,
   });
   assert.match(String(stalePostApprovalReview.error), /already reviewed|changed|conflict/i);
-  const approvedAfterStaleReview = await api(`/api/projects/${publishedId}`);
+  const approvedAfterStaleReview = await api(`/api/projects/${publishedId}`, { token: creatorToken });
   assert.equal(approvedAfterStaleReview.project.status, 'approved');
   assert.equal(approvedAfterStaleReview.project.isPublished, true);
 
@@ -422,7 +422,7 @@ try {
   assert.equal(rejectedFrozenReview.project.status, 'rejected');
   assert.equal(rejectedFrozenReview.project.rejectReason, '已被其他已通过版本取代');
 
-  const finalPublished = await api(`/api/projects/${publishedId}`);
+  const finalPublished = await api(`/api/projects/${publishedId}`, { token: creatorToken });
   assert.equal(finalPublished.project.name, 'Local API Draft Name Fixed');
   assert.equal(finalPublished.project.description, 'Draft description changed later');
   assert.equal(finalPublished.project.status, 'approved');

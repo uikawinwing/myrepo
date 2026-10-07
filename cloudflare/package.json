@@ -19,6 +19,8 @@
     "dev:local-snapshot": "wrangler dev --local --config wrangler.jsonc --persist-to .wrangler/local-production-20260906 --ip 127.0.0.1 --port 8792 --var JWT_SECRET:cw-local-snapshot",
     "dev:lan": "wrangler dev --config wrangler.local-test.jsonc --local --ip 0.0.0.0 --port 8790",
     "dev:test-api": "node scripts/start-local-api-test.mjs",
+    "test:local-api": "node scripts/run-local-api-integration.mjs",
+    "check:local-api-lifecycle": "node tests/local-api-test-lifecycle.mjs",
     "check:home-js": "node scripts/check-home-js.mjs",
     "check:worldbook-normalize": "node scripts/check-worldbook-normalize.mjs",
     "check:workshop-worldbook-reconcile": "node scripts/check-workshop-worldbook-reconcile.mjs",

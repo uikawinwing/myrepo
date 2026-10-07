@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 
-const base = 'http://127.0.0.1:8791';
+const base = process.env.WORKSHOP_LOCAL_WORKER || `http://127.0.0.1:${process.env.WORKSHOP_LOCAL_API_PORT || 8791}`;
 const token = (admin) => {
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
