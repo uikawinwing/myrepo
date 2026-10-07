@@ -191,9 +191,16 @@ for (const testCase of collectorCases) {
   });
   const threadRecords = bothRecords.filter(record => record.url === threadUrl);
   assert.equal(threadRecords.length, 1, `contradictory duplicate pair: ${JSON.stringify(bothRecords)}`);
-  assert.equal(threadRecords[0].trust, LINK_TRUST.TRUSTED);
-  assert.equal(threadRecords[0].source, LINK_SOURCE.DISCORD_THREAD);
-  assert.deepEqual([...threadRecords[0].sources].sort(), [
+  const threadRecord = threadRecords[0];
+  assert.ok(
+    threadRecord.observations.some(observation => observation.authoritative && observation.trust === LINK_TRUST.TRUSTED),
+    `missing authoritative observation: ${JSON.stringify(threadRecord.observations)}`,
+  );
+  assert.ok(
+    threadRecord.observations.some(observation => observation.source === LINK_SOURCE.DESCRIPTION),
+    'the description sighting must still be recorded',
+  );
+  assert.deepEqual([...threadRecord.sources].sort(), [
     LINK_SOURCE.DESCRIPTION,
     LINK_SOURCE.DISCORD_THREAD,
     LINK_SOURCE.PRECAUTIONS,
@@ -330,19 +337,35 @@ function charInfoBlock(mediaUrls) {
 const TRUSTED_GALLERY = 'https://i.ibb.co/YTpkjhVt/file-00000000e0bc81fda16e63b1a9c1ba24.png';
 const trustedBlock = charInfoBlock([TRUSTED_GALLERY]);
 
-// 8. no trusted/untrusted contradictory pair for one normalized URL when the same
-// asset is both a proven media value and mentioned in prose.
+// 8. one URL identity, two observations with different usage. The CharInfo MEDIA
+// sighting is trusted, but the description sighting is unknown-usage and must
+// still need review. This is the P1 rule: trust is not lifted across usages.
 {
   const records = collectProjectExternalLinks({
     description: `cover ${TRUSTED_GALLERY}`,
     worldbookEntries: [{ content: trustedBlock }],
   });
   const gallery = records.filter(record => record.url === TRUSTED_GALLERY);
-  assert.equal(gallery.length, 1, `duplicated record: ${JSON.stringify(records)}`);
-  assert.equal(gallery[0].trust, LINK_TRUST.TRUSTED);
-  assert.ok(gallery[0].sources.includes(LINK_SOURCE.DESCRIPTION));
-  assert.equal(externalLinksNeedingReview(records).length, 0, JSON.stringify(externalLinksNeedingReview(records)));
-  count += 4;
+  assert.equal(gallery.length, 1, `duplicated identity: ${JSON.stringify(records)}`);
+
+  const media = gallery[0].observations.find(item => item.source === LINK_SOURCE.CHARINFO_MEDIA);
+  assert.equal(media?.trust, LINK_TRUST.TRUSTED, JSON.stringify(gallery[0].observations));
+  assert.equal(media?.usage, LINK_USAGE.MEDIA);
+
+  const prose = gallery[0].observations.find(item => item.source === LINK_SOURCE.DESCRIPTION);
+  assert.ok(prose, `description observation lost: ${JSON.stringify(gallery[0].observations)}`);
+  assert.equal(prose.usage, LINK_USAGE.UNKNOWN);
+  assert.notEqual(prose.trust, LINK_TRUST.TRUSTED, 'the media sighting must not launder the prose sighting');
+
+  const review = externalLinksNeedingReview(records);
+  assert.equal(review.length, 1, `expected the description sighting to need review: ${JSON.stringify(review)}`);
+  assert.equal(review[0].url, TRUSTED_GALLERY);
+  assert.ok(review[0].reviewSources.includes(LINK_SOURCE.DESCRIPTION));
+
+  // Only the media-only case stays fully clean.
+  const mediaOnly = collectProjectExternalLinks({ worldbookEntries: [{ content: trustedBlock }] });
+  assert.equal(externalLinksNeedingReview(mediaOnly).length, 0, JSON.stringify(externalLinksNeedingReview(mediaOnly)));
+  count += 10;
 }
 
 // A trusted CharInfo media block produces no yellow audit signal at all.
@@ -355,10 +378,24 @@ count += 2;
 const charInfoRecords = collectProjectExternalLinks({
   worldbookEntries: [{ content: trustedBlock }],
 });
-const charInfoMediaRecords = charInfoRecords.filter(record => record.source === LINK_SOURCE.CHARINFO_MEDIA);
-assert.ok(charInfoMediaRecords.length > 0, JSON.stringify(charInfoRecords));
-assert.ok(charInfoMediaRecords.every(record => record.trust === LINK_TRUST.TRUSTED));
-count++;
+const charInfoMediaObservations = charInfoRecords.flatMap(record =>
+  record.observations.filter(observation => observation.source === LINK_SOURCE.CHARINFO_MEDIA),
+);
+assert.ok(charInfoMediaObservations.length > 0, JSON.stringify(charInfoRecords));
+assert.ok(
+  charInfoMediaObservations.every(observation => observation.trust === LINK_TRUST.TRUSTED),
+  JSON.stringify(charInfoMediaObservations),
+);
+// The same URLs must not reappear as generic worldbook prose.
+assert.deepEqual(
+  charInfoRecords.flatMap(record => record.observations)
+    .filter(observation => observation.source === LINK_SOURCE.WORLDBOOK)
+    .map(observation => observation.url),
+  [],
+  `CharInfo media re-entered as worldbook prose: ${JSON.stringify(charInfoRecords)}`,
+);
+assert.equal(externalLinksNeedingReview(charInfoRecords).length, 0, JSON.stringify(externalLinksNeedingReview(charInfoRecords)));
+count += 3;
 
 // A mixed gallery keeps the warning.
 const mixedBlock = charInfoBlock([TRUSTED_GALLERY, 'https://untrusted.example/portrait.png']);
@@ -423,8 +460,77 @@ count++;
   // The URL must be present exactly once, as proven media, not twice.
   const occurrences = records.filter(record => record.url === TRUSTED_GALLERY);
   assert.equal(occurrences.length, 1, `duplicated record: ${JSON.stringify(occurrences)}`);
-  assert.equal(occurrences[0].usage, LINK_USAGE.MEDIA);
-  assert.equal(occurrences[0].trust, LINK_TRUST.TRUSTED);
+  assert.deepEqual(
+    occurrences[0].observations.map(observation => [observation.source, observation.usage, observation.trust]),
+    [[LINK_SOURCE.CHARINFO_MEDIA, LINK_USAGE.MEDIA, LINK_TRUST.TRUSTED]],
+    `unexpected observations: ${JSON.stringify(occurrences[0].observations)}`,
+  );
+  count += 4;
+}
+
+// ---------------------------------------------------------------- P1 observation cases
+{
+  const review = input => externalLinksNeedingReview(
+    collectProjectExternalLinks({ allowedGuildIds: ALLOWED_GUILDS, ...input }),
+  );
+  const observationsFor = (input, url) => collectProjectExternalLinks(
+    { allowedGuildIds: ALLOWED_GUILDS, ...input },
+  ).find(record => record.url === url)?.observations ?? [];
+
+  // 1. CharInfo trusted media only -> no review.
+  const mediaOnly = review({ worldbookEntries: [{ content: trustedBlock }] });
+  assert.deepEqual(mediaOnly, [], JSON.stringify(mediaOnly));
+
+  // 2. + description: media trusted, description observation still unresolved.
+  const withDescription = { worldbookEntries: [{ content: trustedBlock }], description: `cover ${TRUSTED_GALLERY}` };
+  const descObservations = observationsFor(withDescription, TRUSTED_GALLERY);
+  assert.equal(descObservations.find(item => item.source === LINK_SOURCE.CHARINFO_MEDIA)?.trust, LINK_TRUST.TRUSTED);
+  const descProse = descObservations.find(item => item.source === LINK_SOURCE.DESCRIPTION);
+  assert.ok(descProse, JSON.stringify(descObservations));
+  assert.notEqual(descProse.trust, LINK_TRUST.TRUSTED);
+  assert.equal(review(withDescription).length, 1, 'the prose sighting must still need review');
+
+  // 3. + precautions: same rule.
+  const withPrecautions = { worldbookEntries: [{ content: trustedBlock }], precautions: `cover ${TRUSTED_GALLERY}` };
+  const precProse = observationsFor(withPrecautions, TRUSTED_GALLERY)
+    .find(item => item.source === LINK_SOURCE.PRECAUTIONS);
+  assert.ok(precProse, 'precautions sighting lost');
+  assert.notEqual(precProse.trust, LINK_TRUST.TRUSTED);
+  assert.equal(review(withPrecautions).length, 1);
+
+  // 4. ordinary worldbook prose outside managed media usage is not laundered.
+  const withProse = review({
+    worldbookEntries: [{ content: `${trustedBlock}\nsee also ${TRUSTED_GALLERY} for details` }],
+  });
+  assert.equal(withProse.length, 1, `worldbook prose must not be laundered: ${JSON.stringify(withProse)}`);
+  assert.equal(withProse[0].url, TRUSTED_GALLERY);
+  count += 9;
+
+  // 5/6. a validated project thread still removes its description/precautions
+  // duplicates, because that is an identity proof, not a usage proof.
+  for (const field of ['description', 'precautions']) {
+    const input = { [field]: threadUrl, discordThreadUrl: threadUrl };
+    assert.deepEqual(review(input), [], `${field} duplicate must not need review`);
+  }
+  count += 2;
+
+  // 7. wrong guild / invite / message in prose are still reviewed.
+  for (const url of [
+    `https://discord.com/channels/${OTHER_GUILD}/${OTHER_GUILD}1`,
+    'https://discord.gg/abc123',
+    `https://discord.com/channels/${ALLOWED_GUILD}/${ALLOWED_GUILD}1/42`,
+  ]) {
+    assert.equal(review({ description: `see ${url}` }).length, 1, `${url} must be reviewed`);
+  }
+  count += 3;
+
+  // 9. no project field, or a field the validator rejects, produces no
+  // authoritative observation at all.
+  const noField = observationsFor({ description: threadUrl }, threadUrl);
+  assert.equal(noField.some(item => item.authoritative), false, JSON.stringify(noField));
+  const badField = observationsFor({ description: `https://discord.com/channels/${OTHER_GUILD}/${OTHER_GUILD}1`, discordThreadUrl: 'https://discord.gg/nope' }, `https://discord.com/channels/${OTHER_GUILD}/${OTHER_GUILD}1`);
+  assert.equal(badField.some(item => item.authoritative), false, JSON.stringify(badField));
+  assert.equal(review({ description: `https://discord.com/channels/${OTHER_GUILD}/${OTHER_GUILD}1`, discordThreadUrl: 'https://discord.gg/nope' }).length, 1);
   count += 4;
 }
 
