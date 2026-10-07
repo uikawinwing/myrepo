@@ -18,30 +18,19 @@ import { inspectCharInfoManagedV2Block } from '../ejs-checker/policy-config.mjs'
 const HTTP_URL_PATTERN = /https?:\/\/[^\s<>"'`，。；：！？、（）【】《》“”‘’]+/giu;
 
 /**
- * Collect every external link a project exposes, with the source it came from.
+ * Collect every external link a project exposes, with the sources it came from.
  *
- * `discordThreadUrl` is validated with the shared project policy, so a thread
- * URL the project field already accepts is reported as a trusted community
- * link instead of an unknown generic external link.
+ * One normalized URL is one identity, but it may be observed from several
+ * places with different usage. Trust is decided per observation because the
+ * policy is usage-sensitive: a `files.catbox.moe` URL proven to be CharInfo
+ * MEDIA is trusted there, while the same URL sitting in the description is an
+ * unknown-usage observation that still needs a human.
+ *
+ * `discordThreadUrl` is the one deliberate exception. Its dedicated validator
+ * proves the exact normalized URL *is* the project's community target, so
+ * observations of that same URL in description/precautions are covered by that
+ * proof rather than re-litigated.
  */
-// How much a usage tells us about what a URL actually does. A proven usage beats
-// a guessed one, so it must never be downgraded by a later, vaguer sighting.
-const USAGE_SPECIFICITY = {
-  [LINK_USAGE.UNKNOWN]: 0,
-  [LINK_USAGE.RESOURCE]: 1,
-  [LINK_USAGE.NETWORK]: 1,
-  [LINK_USAGE.MEDIA]: 2,
-  [LINK_USAGE.NAVIGATION]: 2,
-};
-
-// A positive trust decision must never be undone by a later sighting that could
-// not classify the URL as well.
-const TRUST_RANK = {
-  [LINK_TRUST.UNKNOWN]: 0,
-  [LINK_TRUST.UNTRUSTED]: 1,
-  [LINK_TRUST.TRUSTED]: 2,
-};
-
 export function collectProjectExternalLinks({
   description = '',
   precautions = '',
@@ -53,81 +42,94 @@ export function collectProjectExternalLinks({
   const records = [];
   const recordByUrl = new Map();
 
-  /**
-   * Merge every sighting of one normalized URL into a single record.
-   *
-   * The same URL can appear in several places, e.g. as the validated project
-   * thread and again inside the description. Those are one link, not two, so the
-   * record keeps the strongest usage and trust seen and lists every source it
-   * came from instead of storing contradictory duplicates.
-   */
-  const addRecord = (rawValue, { source, usage, authoritative = false }) => {
+  const addRecord = (rawValue, { source, usage }) => {
     const value = trimTrailingUrlPunctuation(String(rawValue ?? '').trim());
     const url = normalizeExternalLinkUrl(value);
     if (!url) return;
 
     const href = url.href;
+    const observation = {
+      source,
+      usage,
+      ...classifyExternalLink(url, usage),
+    };
+
     const existing = recordByUrl.get(href);
-
-    if (!existing) {
-      const classification = authoritative
-        ? { trust: LINK_TRUST.TRUSTED, reason: 'validated-project-thread' }
-        : classifyExternalLink(url, usage);
-      const record = {
-        url: href,
-        hostname: url.hostname.toLowerCase(),
-        source,
-        sources: [source],
-        kind: url.protocol === 'https:' ? 'https' : 'http',
-        usage: authoritative ? LINK_USAGE.NAVIGATION : usage,
-        ...classification,
-      };
-      recordByUrl.set(href, record);
-      records.push(record);
+    if (existing) {
+      if (!existing.observations.some(item => item.source === source && item.usage === usage)) {
+        existing.observations.push(observation);
+      }
+      if (!existing.sources.includes(source)) existing.sources.push(source);
       return;
     }
 
-    if (!existing.sources.includes(source)) existing.sources.push(source);
-
-    if (authoritative) {
-      // Proven by the dedicated project field validator: this exact normalized
-      // URL is a validated community link, so no other sighting may weaken it.
-      existing.usage = LINK_USAGE.NAVIGATION;
-      existing.trust = LINK_TRUST.TRUSTED;
-      existing.reason = 'validated-project-thread';
-      existing.source = LINK_SOURCE.DISCORD_THREAD;
-      return;
-    }
-
-    const classification = classifyExternalLink(url, usage);
-    const moreSpecificUsage =
-      (USAGE_SPECIFICITY[usage] ?? 0) > (USAGE_SPECIFICITY[existing.usage] ?? 0);
-    const strongerTrust = (TRUST_RANK[classification.trust] ?? 0) > (TRUST_RANK[existing.trust] ?? 0);
-
-    if (moreSpecificUsage || strongerTrust) {
-      existing.usage = usage;
-      Object.assign(existing, classification);
-    }
+    const record = {
+      url: href,
+      hostname: url.hostname.toLowerCase(),
+      kind: url.protocol === 'https:' ? 'https' : 'http',
+      // Best-effort headline for simple consumers; review decisions use
+      // `observations`, never this.
+      source,
+      sources: [source],
+      usage,
+      observations: [observation],
+    };
+    recordByUrl.set(href, record);
+    records.push(record);
   };
 
-  const addTextLinks = (text, source, usage) => {
+  const addTextLinks = (text, source, usage, skipUrls) => {
     const value = String(text ?? '');
     HTTP_URL_PATTERN.lastIndex = 0;
     for (const match of value.matchAll(HTTP_URL_PATTERN)) {
-      addRecord(match[0], { source, usage });
+      const candidate = trimTrailingUrlPunctuation(match[0]);
+      if (skipUrls?.has(normalizeExternalLinkUrl(candidate)?.href)) continue;
+      addRecord(candidate, { source, usage });
     }
   };
 
   addTextLinks(description, LINK_SOURCE.DESCRIPTION, LINK_USAGE.UNKNOWN);
   addTextLinks(precautions, LINK_SOURCE.PRECAUTIONS, LINK_USAGE.UNKNOWN);
 
+  // The one authoritative identity. When the dedicated project field validator
+  // accepts this exact normalized URL, that URL *is* the project's community
+  // target, so every other observation of the very same URL is covered by that
+  // proof instead of being re-litigated. It does not extend to any other URL,
+  // nor to a field the validator rejected.
   const thread = normalizeProjectDiscordThreadUrl(discordThreadUrl, allowedGuildIds);
   if (thread.ok && thread.value) {
-    addRecord(thread.value, {
-      source: LINK_SOURCE.DISCORD_THREAD,
-      usage: LINK_USAGE.NAVIGATION,
-      authoritative: true,
-    });
+    const href = normalizeExternalLinkUrl(thread.value)?.href;
+    const record = href ? recordByUrl.get(href) : null;
+    if (record) {
+      record.observations.push({
+        source: LINK_SOURCE.DISCORD_THREAD,
+        usage: LINK_USAGE.NAVIGATION,
+        trust: LINK_TRUST.TRUSTED,
+        reason: 'validated-project-thread',
+        authoritative: true,
+      });
+      if (!record.sources.includes(LINK_SOURCE.DISCORD_THREAD)) {
+        record.sources.push(LINK_SOURCE.DISCORD_THREAD);
+      }
+    } else if (href) {
+      const record = {
+        url: href,
+        hostname: new URL(href).hostname.toLowerCase(),
+        kind: 'https',
+        source: LINK_SOURCE.DISCORD_THREAD,
+        sources: [LINK_SOURCE.DISCORD_THREAD],
+        usage: LINK_USAGE.NAVIGATION,
+        observations: [{
+          source: LINK_SOURCE.DISCORD_THREAD,
+          usage: LINK_USAGE.NAVIGATION,
+          trust: LINK_TRUST.TRUSTED,
+          reason: 'validated-project-thread',
+          authoritative: true,
+        }],
+      };
+      recordByUrl.set(href, record);
+      records.push(record);
+    }
   }
 
   for (const entry of Array.isArray(worldbookEntries) ? worldbookEntries : []) {
@@ -137,6 +139,21 @@ export function collectProjectExternalLinks({
       for (const candidate of inspected.mediaUrls) {
         addRecord(candidate, { source: LINK_SOURCE.CHARINFO_MEDIA, usage: LINK_USAGE.MEDIA });
       }
+      // Scan the managed block region for links, but never re-add the profile
+      // media itself: the block's own media usage is proven, and re-adding those
+      // URLs as unknown prose is what put trusted media back into the review set
+      // in #39. Text outside the block is scanned normally, because a link there
+      // really is a separate unknown-usage sighting.
+      const managed = content.slice(inspected.start, inspected.end);
+      const outside = content.slice(0, inspected.start) + content.slice(inspected.end);
+      const coveredMedia = new Set();
+      for (const candidate of inspected.mediaUrls) {
+        const normalized = normalizeExternalLinkUrl(candidate);
+        if (normalized) coveredMedia.add(normalized.href);
+      }
+      addTextLinks(managed, LINK_SOURCE.WORLDBOOK, LINK_USAGE.UNKNOWN, coveredMedia);
+      addTextLinks(outside, LINK_SOURCE.WORLDBOOK, LINK_USAGE.UNKNOWN);
+      continue;
     }
     addTextLinks(content, LINK_SOURCE.WORLDBOOK, LINK_USAGE.UNKNOWN);
   }
@@ -156,13 +173,47 @@ function recordSources(record) {
     : [record?.source].filter(Boolean);
 }
 
+function recordObservations(record) {
+  if (Array.isArray(record?.observations) && record.observations.length > 0) {
+    return record.observations;
+  }
+  return [{ source: record?.source, usage: record?.usage, trust: record?.trust, reason: record?.reason }];
+}
+
+/**
+ * The observations of one URL that still need a human decision.
+ *
+ * A URL needs review when *any* observation is unresolved. A trusted CharInfo
+ * MEDIA sighting therefore does not launder an unknown-usage sighting of the
+ * same URL in the description. The single exception is an authoritative
+ * observation, which proves the URL's identity rather than one of its usages.
+ */
+function unresolvedObservations(record) {
+  // A validated project identity proves which target this URL is, so it covers
+  // every observation of the very same URL rather than only itself.
+  if (recordObservations(record).some(observation => observation?.authoritative)) return [];
+  return recordObservations(record).filter(observation => observation?.trust !== LINK_TRUST.TRUSTED);
+}
+
 /** Records that still need a human decision, in stable order. */
 export function externalLinksNeedingReview(records) {
   return (Array.isArray(records) ? records : [])
-    .filter(record => record.trust !== LINK_TRUST.TRUSTED)
+    .filter(record => unresolvedObservations(record).length > 0)
+    .map(record => {
+      const pending = unresolvedObservations(record);
+      const first = pending[0];
+      return {
+        ...record,
+        source: first.source ?? record.source,
+        usage: first.usage ?? record.usage,
+        trust: first.trust,
+        reason: first.reason,
+        reviewSources: [...new Set(pending.map(item => item.source).filter(Boolean))],
+      };
+    })
     .sort(
       (a, b) =>
-        recordSources(a)[0].localeCompare(recordSources(b)[0]) ||
+        String(a.source).localeCompare(String(b.source)) ||
         a.hostname.localeCompare(b.hostname) ||
         a.url.localeCompare(b.url),
     );
@@ -171,7 +222,7 @@ export function externalLinksNeedingReview(records) {
 /** Trusted records, for the optional informational section. */
 export function trustedExternalLinks(records) {
   return (Array.isArray(records) ? records : []).filter(
-    record => record.trust === LINK_TRUST.TRUSTED,
+    record => unresolvedObservations(record).length === 0,
   );
 }
 

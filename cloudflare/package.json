@@ -21,6 +21,8 @@
     "dev:test-api": "node scripts/start-local-api-test.mjs",
     "test:local-api": "node scripts/run-local-api-integration.mjs",
     "check:local-api-lifecycle": "node tests/local-api-test-lifecycle.mjs",
+    "check:external-link-policy": "node tests/external-link-policy-matrix.mjs",
+    "check:external-link-labels": "node --experimental-strip-types tests/external-link-source-labels.mjs",
     "check:home-js": "node scripts/check-home-js.mjs",
     "check:worldbook-normalize": "node scripts/check-worldbook-normalize.mjs",
     "check:workshop-worldbook-reconcile": "node scripts/check-workshop-worldbook-reconcile.mjs",
