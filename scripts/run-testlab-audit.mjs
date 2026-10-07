@@ -2,6 +2,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  allocateFreePort,
+  startLocalWorker,
+  stopLocalWorker,
+  stopProcessTree,
+  waitUntil,
+} from '../cloudflare/scripts/local-api-test-harness.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testLabRoot = path.resolve(
@@ -9,7 +16,8 @@ const testLabRoot = path.resolve(
 );
 const targetDir = path.join(repoRoot, 'dist', 'CreativeWorkshop-staging');
 const stUrl = process.env.ST_BASE_URL || 'http://127.0.0.1:8011/';
-const workerUrl = process.env.WORKSHOP_LOCAL_WORKER || 'http://127.0.0.1:8791';
+// A dynamic port by default so concurrent agents/worktrees never collide.
+const workerUrl = process.env.WORKSHOP_LOCAL_WORKER || `http://127.0.0.1:${process.env.WORKSHOP_LOCAL_API_PORT || (await allocateFreePort())}`;
 function resolvePnpmCli() {
   if (process.env.npm_execpath) return process.env.npm_execpath;
 
@@ -84,47 +92,6 @@ async function canReach(url, init = {}) {
   }
 }
 
-async function waitUntil(check, label, timeoutMs = 120_000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastError = null;
-
-  while (Date.now() < deadline) {
-    try {
-      if (await check()) return;
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  throw new Error(
-    `Timed out waiting for ${label}${lastError ? `: ${lastError.message || lastError}` : ''}`,
-  );
-}
-
-function killTree(child, label) {
-  if (!child?.pid || child.exitCode !== null) return;
-
-  if (process.platform === 'win32') {
-    const result = spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    if (result.status !== 0) {
-      console.warn(`[TestLab] Could not fully stop ${label} tree (pid ${child.pid}).`);
-    }
-    return;
-  }
-
-  try {
-    process.kill(-child.pid, 'SIGTERM');
-  } catch {
-    try {
-      child.kill('SIGTERM');
-    } catch {}
-  }
-}
-
 async function prepareWorkshopBundle() {
   console.log('[TestLab] Building current Workshop staging bundle...');
   runPnpm(['exec', 'webpack', '--config', 'webpack.config.cjs', '--mode', 'production'], {
@@ -175,47 +142,14 @@ async function ensureTestLabTarget() {
     await new Promise(resolve => setTimeout(resolve, 3_000));
     return child;
   } catch (error) {
-    killTree(child, 'SillyTavern TestLab');
+    stopProcessTree(child, 'SillyTavern TestLab');
     throw error;
   }
 }
 
-async function startLocalWorker() {
-  const existing = await canReach(workerUrl);
-  if (existing) {
-    throw new Error(
-      `Local Worker port is already in use at ${workerUrl}. Stop the existing 8791 process before this managed run so cleanup remains deterministic.`,
-    );
-  }
-
-  console.log('[TestLab] Starting managed local Worker on 8791...');
-
-  const child = spawn(
-    process.execPath,
-    [path.join(repoRoot, 'cloudflare', 'scripts', 'start-local-api-test.mjs')],
-    {
-      cwd: path.join(repoRoot, 'cloudflare'),
-      env: process.env,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      detached: process.platform !== 'win32',
-    },
-  );
-
-  try {
-    await waitUntil(async () => {
-      const response = await canReach(new URL('/api/auth/local-preview', workerUrl), {
-        method: 'POST',
-      });
-      return response?.ok === true;
-    }, 'local Worker Admin endpoint on 8791');
-
-    return child;
-  } catch (error) {
-    killTree(child, 'local Worker');
-    throw error;
-  }
+async function ensureLocalWorker() {
+  const url = new URL(workerUrl);
+  return startLocalWorker({ port: Number(url.port) || undefined });
 }
 
 function runAuditJourney() {
@@ -239,6 +173,7 @@ function runAuditJourney() {
         ...process.env,
         ST_BASE_URL: stUrl,
         WORKSHOP_LOCAL_WORKER: workerUrl,
+        WORKSHOP_LOCAL_API_PORT: new URL(workerUrl).port,
       },
     },
   );
@@ -250,20 +185,23 @@ let workerChild = null;
 try {
   await prepareWorkshopBundle();
   testLabChild = await ensureTestLabTarget();
-  workerChild = await startLocalWorker();
+  workerChild = await ensureLocalWorker();
   runAuditJourney();
   console.log('[TestLab] Audit workflow passed.');
 } finally {
   if (workerChild) {
     console.log('[TestLab] Stopping managed local Worker...');
-    killTree(workerChild, 'local Worker');
-    await waitUntil(async () => (await canReach(workerUrl)) === null, '8791 shutdown', 15_000).catch(
-      error => console.warn('[TestLab] ' + error.message),
-    );
+    const stopped = await stopLocalWorker(workerChild, workerUrl);
+    if (!stopped) {
+      console.error(
+        `[TestLab] The Worker tree started by this run is still alive on ${workerUrl}. Stop it manually before starting another run.`,
+      );
+      process.exitCode = 1;
+    }
   }
 
   if (testLabChild) {
     console.log('[TestLab] Stopping SillyTavern started by this run...');
-    killTree(testLabChild, 'SillyTavern TestLab');
+    stopProcessTree(testLabChild, 'SillyTavern TestLab');
   }
 }

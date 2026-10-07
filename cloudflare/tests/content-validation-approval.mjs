@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 
-const BASE_URL = 'http://127.0.0.1:8791';
+const BASE_URL = process.env.WORKSHOP_LOCAL_WORKER || `http://127.0.0.1:${process.env.WORKSHOP_LOCAL_API_PORT || 8791}`;
 const SIGNING_VALUE = 'cw-local-api-test';
 
 function encodeJson(value) {
@@ -287,7 +287,9 @@ try {
   });
   await approve(extensionRegexOnly.projectId);
 
-  const publishedRegex = await api(`/api/projects/${extensionRegexOnly.projectId}`);
+  // Review state (status/isPublished) is intentionally hidden from non-owner
+  // viewers, so an authenticated creator read is what verifies approval.
+  const publishedRegex = await api(`/api/projects/${extensionRegexOnly.projectId}`, { token: creatorToken });
   assert.equal(publishedRegex.project.status, 'approved');
   assert.equal(publishedRegex.regexEntriesPreview.length, 1);
 
@@ -316,7 +318,7 @@ try {
   await approve(regexEditDraft.draftProjectId);
   cleanupIds.delete(regexEditDraft.draftProjectId);
 
-  const republishedRegex = await api(`/api/projects/${extensionRegexOnly.projectId}`);
+  const republishedRegex = await api(`/api/projects/${extensionRegexOnly.projectId}`, { token: creatorToken });
   assert.equal(republishedRegex.project.status, 'approved');
   assert.equal(republishedRegex.project.description, 'regex-only edit lifecycle test');
   assert.equal(republishedRegex.regexEntriesPreview.length, 1);

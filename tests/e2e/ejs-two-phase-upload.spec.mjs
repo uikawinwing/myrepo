@@ -2,12 +2,13 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 
+const LOCAL_WORKER = process.env.WORKSHOP_LOCAL_WORKER || `http://127.0.0.1:${process.env.WORKSHOP_LOCAL_API_PORT || 8791}`;
 test.use({ bypassCSP: true }); // Inject a minimal harness; the checker asset and API are real localhost services.
 async function module(relative) {
   return import('data:text/javascript;base64,' + Buffer.from(readFileSync(relative, 'utf8')).toString('base64'));
 }
 async function harness(page) {
-  await page.goto('http://127.0.0.1:8791');
+  await page.goto(LOCAL_WORKER);
   await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><main id="overlay"><form id="projectForm"><input id="fileInput" type="file"><input id="regexInput" type="file" multiple><input id="coverInput" type="file"><div id="fileDrop">选择世界书</div><div id="regexDrop">选择正则</div><div id="coverDrop">选择图片</div><div id="worldbookUploadPreview"></div><div id="regexUploadPreview"></div><div id="coverUploadPreview"></div><button type="button" id="submit">提交检查</button><button type="button" id="responsive">页面响应</button><output id="clicks">0</output></form></main>');
   const { homeApiScript } = await module('cloudflare/src/pages/home/api.ts');
   const { homeUploadPreviewScript } = await module('cloudflare/src/pages/home/upload-preview.ts');

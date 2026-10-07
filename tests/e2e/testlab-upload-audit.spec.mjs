@@ -7,7 +7,7 @@ const workshopConfig = JSON.parse(
 );
 
 const WORKSHOP_ORIGIN = workshopConfig.endpoints.staging;
-const LOCAL_WORKER = process.env.WORKSHOP_LOCAL_WORKER || 'http://127.0.0.1:8791';
+const LOCAL_WORKER = process.env.WORKSHOP_LOCAL_WORKER || `http://127.0.0.1:${process.env.WORKSHOP_LOCAL_API_PORT || 8791}`;
 const blockedPath = fileURLToPath(
   new URL('./fixtures/workshop-qa-l-blocked.json', import.meta.url),
 );

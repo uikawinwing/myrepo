@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 
-const BASE_URL = 'http://127.0.0.1:8791';
+const BASE_URL = process.env.WORKSHOP_LOCAL_WORKER || `http://127.0.0.1:${process.env.WORKSHOP_LOCAL_API_PORT || 8791}`;
 const SIGNING_VALUE = 'cw-local-api-test';
 
 function encodeJson(value) {
