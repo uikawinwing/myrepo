@@ -5,12 +5,15 @@
 // created itself, and so that concurrent worktrees never share one hard-coded port.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { access, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const cloudflareRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const starterScript = path.join(cloudflareRoot, 'scripts', 'start-local-api-test.mjs');
+const wranglerCli = path.join(cloudflareRoot, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+const persistRoot = path.join(cloudflareRoot, '.wrangler', 'local-api-test-runs');
 
 export const DEFAULT_LOCAL_WORKER_PORT = 8791;
 
@@ -122,18 +125,31 @@ export function stopProcessTree(child, label) {
 export async function stopLocalWorker(child, origin, label = 'local Worker') {
   if (!child?.pid) return true;
 
-  stopProcessTree(child, label);
+  // The port closing does not prove wrangler exited: it can still be holding
+  // its local state directory for a moment afterwards. Wait for the child
+  // itself, so callers can safely delete the run state directory.
+  if (child.exitCode === null && child.signalCode === null) {
+    stopProcessTree(child, label);
 
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) break;
-    await new Promise(resolve => setTimeout(resolve, 250));
+    const exitDeadline = Date.now() + 15_000;
+    while (Date.now() < exitDeadline) {
+      if (child.exitCode !== null || child.signalCode !== null) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   }
 
   if (await isLocalWorkerGone(origin)) return true;
 
   // Escalate once: a workerd that ignored the group signal still has to go.
-  stopProcessTree(child, `${label} (escalated)`);
+  if (child.exitCode === null && child.signalCode === null) {
+    stopProcessTree(child, `${label} (escalated)`);
+    const escalateDeadline = Date.now() + 15_000;
+    while (Date.now() < escalateDeadline) {
+      if (child.exitCode !== null || child.signalCode !== null) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
   try {
     await waitUntil(() => isLocalWorkerGone(origin), `${origin} shutdown`, 10_000);
   } catch {
@@ -142,7 +158,7 @@ export async function stopLocalWorker(child, origin, label = 'local Worker') {
   return true;
 }
 
-export async function startLocalWorker({ port, stdio = 'inherit' } = {}) {
+export async function startLocalWorker({ port, stdio = 'inherit', persistTo } = {}) {
   const resolvedPort = port ?? resolveLocalWorkerPort();
   const origin = localWorkerOrigin(resolvedPort);
 
@@ -154,11 +170,16 @@ export async function startLocalWorker({ port, stdio = 'inherit' } = {}) {
     );
   }
 
+  const persistDir = persistTo || (await prepareRunState(resolvedPort));
   console.log(`[local-api] Starting the test Worker on ${origin}...`);
 
   const child = spawn(process.execPath, [starterScript], {
     cwd: cloudflareRoot,
-    env: { ...process.env, WORKSHOP_LOCAL_API_PORT: String(resolvedPort) },
+    env: {
+      ...process.env,
+      WORKSHOP_LOCAL_API_PORT: String(resolvedPort),
+      WORKSHOP_LOCAL_API_PERSIST_TO: persistDir,
+    },
     stdio,
     shell: false,
     windowsHide: true,
@@ -183,10 +204,90 @@ export async function startLocalWorker({ port, stdio = 'inherit' } = {}) {
     );
   } catch (error) {
     await stopLocalWorker(child, origin);
+    await removeRunState(persistDir);
     throw error;
   }
 
-  return { child, origin, port: resolvedPort };
+  return { child, origin, port: resolvedPort, persistDir };
+}
+
+/**
+ * Give this run its own local wrangler state and apply the local test schema.
+ *
+ * Concurrent runs otherwise share one local SQLite file and one of them dies
+ * with SQLITE_BUSY before it ever binds its port.
+ */
+async function prepareRunState(port) {
+  try {
+    await access(wranglerCli);
+  } catch {
+    throw new Error(
+      'Wrangler is not installed in cloudflare/node_modules. Run `npm ci` in the cloudflare directory first.',
+    );
+  }
+
+  await mkdir(persistRoot, { recursive: true });
+  const persistDir = path.join(persistRoot, `port-${port}-${process.pid}-${Date.now()}`);
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      wranglerCli,
+      'd1',
+      'execute',
+      'creative_workshop_local_test',
+      '--local',
+      '--config',
+      'wrangler.local-test.jsonc',
+      '--persist-to',
+      persistDir,
+      '--file=schema.sql',
+    ],
+    { cwd: cloudflareRoot, stdio: 'ignore', shell: false, windowsHide: true },
+  );
+
+  if (result.status !== 0) {
+    throw new Error(
+      `Could not prepare the local test database for port ${port} (wrangler d1 execute exited with ${result.status ?? 'unknown'}).`,
+    );
+  }
+
+  return persistDir;
+}
+
+/** Remove this run's throwaway wrangler state directory. */
+export async function removeRunState(persistDir) {
+  if (!persistDir || !persistDir.startsWith(persistRoot)) return;
+  await rm(persistDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(
+    error => console.warn(`[local-api] Could not remove the run state ${persistDir}: ${error.message}`),
+  );
+}
+
+/**
+ * Delete run state left behind by a killed process, so a crashed or SIGKILLed
+ * run does not permanently fill the disk.
+ */
+export async function sweepStaleRunState(maxAgeMs = 24 * 60 * 60 * 1000) {
+  let entries = [];
+  try {
+    entries = await readdir(persistRoot, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(persistRoot, entry.name);
+    try {
+      const stats = await stat(dir);
+      if (Date.now() - stats.mtimeMs > maxAgeMs) {
+        await rm(dir, { recursive: true, force: true });
+        removed += 1;
+      }
+    } catch {}
+  }
+  return removed;
 }
 
 /**
@@ -194,6 +295,7 @@ export async function startLocalWorker({ port, stdio = 'inherit' } = {}) {
  * down afterwards, including on SIGINT, SIGTERM, failure and timeout.
  */
 export async function withLocalWorker(run, { port, timeoutMs } = {}) {
+  await sweepStaleRunState();
   const started = await startLocalWorker({ port });
   const { child, origin } = started;
   const workers = new Set();
@@ -202,6 +304,7 @@ export async function withLocalWorker(run, { port, timeoutMs } = {}) {
 
   const cleanup = async () => {
     const stopped = await stopLocalWorker(child, origin);
+    await removeRunState(started.persistDir);
     if (!stopped) {
       console.error(
         `[local-api] The Worker process tree started by this run is still alive on ${origin}. `

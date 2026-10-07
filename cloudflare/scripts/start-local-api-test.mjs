@@ -31,6 +31,15 @@ const args = [
   `${variableName}:cw-local-api-test`,
 ];
 
+// A dynamic port alone is not enough for concurrency: wrangler's default local
+// persistence directory is shared, so two runs would fight over the same local
+// SQLite file and one would die with SQLITE_BUSY. Each run therefore gets its
+// own throwaway persist directory, seeded with the local test schema.
+const persistTo = process.env.WORKSHOP_LOCAL_API_PERSIST_TO;
+if (persistTo) {
+  args.push('--persist-to', persistTo);
+}
+
 const child = spawn(process.execPath, args, {
   cwd: cloudflareRoot,
   stdio: 'inherit',
