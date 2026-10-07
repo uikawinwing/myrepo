@@ -14766,20 +14766,112 @@ var PoemEjsChecker = (() => {
     return findings;
   }
 
+  // src/utils/external-links/policy.mjs
+  var TRUSTED_MEDIA_HOSTS = Object.freeze(["files.catbox.moe", "i.ibb.co"]);
+  var DISCORD_HOSTS = Object.freeze(["discord.com", "www.discord.com"]);
+  var DISCORD_SNOWFLAKE_PATTERN = /^\d{17,20}$/;
+  var MEDIA_EXTENSIONS = /\.(?:png|jpe?g|webp|gif|avif|apng|bmp|ico|mp4|webm|mov|m4v|ogv)$/i;
+  var LINK_USAGE = Object.freeze({
+    MEDIA: "media",
+    NAVIGATION: "navigation",
+    NETWORK: "network",
+    RESOURCE: "resource",
+    UNKNOWN: "unknown"
+  });
+  var LINK_TRUST = Object.freeze({
+    TRUSTED: "trusted",
+    UNTRUSTED: "untrusted",
+    UNKNOWN: "unknown"
+  });
+  var LINK_SOURCE = Object.freeze({
+    DESCRIPTION: "description",
+    PRECAUTIONS: "precautions",
+    DISCORD_THREAD: "discordThreadUrl",
+    WORLDBOOK: "worldbook",
+    REGEX: "regex",
+    CHARINFO_MEDIA: "charInfoMedia",
+    EJS: "ejs"
+  });
+  var DYNAMIC_URL_PATTERN = /\$\d+|\$<[^>]+>|\$\{/;
+  function isDynamicUrlCandidate(value) {
+    return DYNAMIC_URL_PATTERN.test(String(value ?? ""));
+  }
+  function normalizeExternalLinkUrl(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw || raw.length > 4096) return null;
+    if (isDynamicUrlCandidate(raw)) return null;
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      return null;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!url.hostname) return null;
+    if (url.username || url.password) return null;
+    return url;
+  }
+  function isIpHost(hostname) {
+    const host = String(hostname ?? "").toLowerCase();
+    if (!host) return false;
+    return host.includes(":") || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);
+  }
+  function classifyExternalLink(normalized, usage = LINK_USAGE.UNKNOWN) {
+    const url = normalized instanceof URL ? normalized : normalizeExternalLinkUrl(normalized);
+    if (!url) {
+      return {
+        trust: LINK_TRUST.UNKNOWN,
+        reason: "not-a-plain-http-url"
+      };
+    }
+    const hostname = url.hostname.toLowerCase();
+    if (isIpHost(hostname)) {
+      return { trust: LINK_TRUST.UNTRUSTED, reason: "ip-host" };
+    }
+    if (url.protocol === "http:") {
+      return { trust: LINK_TRUST.UNTRUSTED, reason: "insecure-http" };
+    }
+    if (usage === LINK_USAGE.MEDIA && TRUSTED_MEDIA_HOSTS.includes(hostname)) {
+      if (!MEDIA_EXTENSIONS.test(url.pathname)) {
+        return { trust: LINK_TRUST.UNTRUSTED, reason: "media-host-without-media-extension" };
+      }
+      return { trust: LINK_TRUST.TRUSTED, reason: "trusted-media-host" };
+    }
+    return { trust: LINK_TRUST.UNTRUSTED, reason: "unlisted-host" };
+  }
+  function inspectExternalLink(value, usage = LINK_USAGE.UNKNOWN) {
+    const url = normalizeExternalLinkUrl(value);
+    const decision = classifyExternalLink(url, usage);
+    return {
+      url: url ? url.href : null,
+      hostname: url ? url.hostname.toLowerCase() : null,
+      ...decision
+    };
+  }
+  function isTrustedStaticMediaUrl(value) {
+    return inspectExternalLink(value, LINK_USAGE.MEDIA).trust === LINK_TRUST.TRUSTED;
+  }
+  function classifyDynamicMediaCandidates(candidates) {
+    const values = Array.isArray(candidates) ? candidates : [];
+    if (values.length === 0) {
+      return { trust: LINK_TRUST.UNKNOWN, reason: "no-candidates" };
+    }
+    for (const candidate of values) {
+      const decision = inspectExternalLink(candidate, LINK_USAGE.MEDIA);
+      if (decision.trust !== LINK_TRUST.TRUSTED) {
+        return { trust: decision.trust, reason: `candidate-not-trusted:${candidate}` };
+      }
+    }
+    return { trust: LINK_TRUST.TRUSTED, reason: "all-candidates-trusted" };
+  }
+
   // src/utils/ejs-checker/policy-config.mjs
   var CHECK_POLICY_VERSION = "PW-CODE-POLICY-2026-10-05.3";
-  var trustedAssetHosts = Object.freeze(["files.catbox.moe", "i.ibb.co"]);
   var CHARINFO_MANAGED_BLOCK_START = "<%# char-info-ejs-builder:start:v2 %>";
   var CHARINFO_MANAGED_BLOCK_END = "<%# char-info-ejs-builder:end:v2 %>";
-  var MEDIA_EXTENSIONS = /\.(?:png|jpe?g|webp|gif|avif|apng|bmp|ico|mp4|webm|mov|m4v|ogv)$/i;
   function trustedStaticMediaUrl(value, usage) {
-    if (usage !== "media" || typeof value !== "string" || /\$\d+|\$<[^>]+>|\$\{/.test(value)) return false;
-    try {
-      const url = new URL(value);
-      return url.protocol === "https:" && !url.username && !url.password && trustedAssetHosts.includes(url.hostname.toLowerCase()) && MEDIA_EXTENSIONS.test(url.pathname);
-    } catch {
-      return false;
-    }
+    if (usage !== LINK_USAGE.MEDIA || typeof value !== "string") return false;
+    return isTrustedStaticMediaUrl(value);
   }
   function countOccurrences(content, target) {
     if (!target) return 0;
@@ -15044,10 +15136,25 @@ var PoemEjsChecker = (() => {
     return url && ["http:", "https:"].includes(url.protocol);
   }
   function ipHost(host) {
-    return host.includes(":") || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);
+    return isIpHost(host);
+  }
+  function isTrustedMediaTarget(target, mediaValues) {
+    if (trustedStaticMediaUrl(target.value, target.usage)) return true;
+    if (target.usage === "unknown" && mediaValues.has(target.value)) {
+      return trustedStaticMediaUrl(target.value, "media");
+    }
+    return false;
+  }
+  function isValidatedProjectThreadUrl(url) {
+    if (url.protocol !== "https:") return false;
+    if (!DISCORD_HOSTS.includes(url.hostname.toLowerCase())) return false;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length !== 3 || parts[0] !== "channels") return false;
+    return DISCORD_SNOWFLAKE_PATTERN.test(parts[1]) && DISCORD_SNOWFLAKE_PATTERN.test(parts[2]);
   }
   function inspectExternalLinks(entry, parsed) {
     const source = String(entry.rawContent ?? entry.content ?? ""), targets = [], hints = [], covered = [], seen = /* @__PURE__ */ new Set();
+    const mediaValues = /* @__PURE__ */ new Set();
     const addTarget = (value, index, usage, action, expression = "") => {
       if (!external(value)) return;
       const key = index + "|" + value + "|" + usage;
@@ -15058,7 +15165,7 @@ var PoemEjsChecker = (() => {
     for (const unit of parsed.units ?? []) {
       if (!unit.ast) continue;
       const analysis = buildScopes(unit), parents = new WeakMap(analysis.nodes.map((item) => [item.node, item.parent]));
-      const navigation = /* @__PURE__ */ new Set(), networkCalls = /* @__PURE__ */ new Set(), mediaValues = /* @__PURE__ */ new Set();
+      const navigation = /* @__PURE__ */ new Set(), networkCalls = /* @__PURE__ */ new Set();
       for (const { node, scope, parent } of analysis.nodes) {
         if (!unit.sourceMap.isOriginal(node.start) || !parent || !(parent.type === "AssignmentExpression" && parent.right === node || parent.type === "Property" && parent.value === node || parent.type === "VariableDeclarator" && parent.init === node) || !mediaContext(node, scope, parents, analysis)) continue;
         const values = staticStringValues(node, analysis, scope);
@@ -15069,8 +15176,14 @@ var PoemEjsChecker = (() => {
         else if (!["ObjectExpression", "ArrayExpression", "Literal", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type) && !(node.type === "CallExpression" && propertyName2(node.callee) === "createElement") && !(node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Image" && !resolveBinding(scope, "Image"))) {
           const index = unit.sourceMap.map(node.start);
           const charInfoBlock = inspectCharInfoManagedV2Block(source, index);
-          const candidates = charInfoBlock?.mediaUrls?.length ? charInfoBlock.mediaUrls : sourceUrlCandidates(source);
-          if (charInfoBlock && isGeneratedCharInfoMediaNode(node, parents) && candidates.length && candidates.every((value) => trustedStaticMediaUrl(value, "media"))) continue;
+          const generatedCharInfoMedia = Boolean(charInfoBlock) && isGeneratedCharInfoMediaNode(node, parents);
+          if (charInfoBlock && !generatedCharInfoMedia) {
+            hints.push({ ruleId: "AH2", severity: "hint", title: "\u5A92\u4F53\u6765\u6E90\u9700\u8981\u4EBA\u5DE5\u786E\u8BA4", index, detail: "\u6700\u7EC8\u56FE\u7247\u6216\u89C6\u9891\u5730\u5740\u7531\u8FD0\u884C\u65F6\u5185\u5BB9\u51B3\u5B9A\uFF0C\u81EA\u52A8\u68C0\u67E5\u65E0\u6CD5\u786E\u5B9A\u5B9E\u9645\u4F1A\u52A0\u8F7D\u54EA\u4E2A\u5730\u5740\u3002", suggestion: "\u5F53\u524D\u6761\u76EE\u4F4D\u4E8E\u89D2\u8272\u7ACB\u7ED8\u6258\u7BA1\u533A\u5757\u5185\uFF0C\u4F46\u4E0D\u662F\u53EF\u786E\u8BA4\u7684\u7ACB\u7ED8\u5A92\u4F53\u4EE3\u7801\u3002\u8BF7\u8BF4\u660E\u8FD9\u6BB5\u4EE3\u7801\u5B9E\u9645\u4F1A\u52A0\u8F7D\u54EA\u4E2A\u5730\u5740\u3002", extra: { riskEvidence: { action: "resource", usage: "media", target: "dynamic", expression: expressionEvidence(node), candidates: charInfoBlock.mediaUrls } } });
+            continue;
+          }
+          const candidates = generatedCharInfoMedia && charInfoBlock.mediaUrls.length ? charInfoBlock.mediaUrls : sourceUrlCandidates(source);
+          for (const candidate of candidates) if (isTrustedStaticMediaUrl(candidate)) mediaValues.add(candidate);
+          if (classifyDynamicMediaCandidates(candidates).trust === LINK_TRUST.TRUSTED) continue;
           hints.push({ ruleId: "AH2", severity: "hint", title: "\u5A92\u4F53\u6765\u6E90\u9700\u8981\u4EBA\u5DE5\u786E\u8BA4", index, detail: "\u6700\u7EC8\u56FE\u7247\u6216\u89C6\u9891\u5730\u5740\u7531\u8FD0\u884C\u65F6\u5185\u5BB9\u51B3\u5B9A\uFF0C\u81EA\u52A8\u68C0\u67E5\u65E0\u6CD5\u786E\u5B9A\u5B9E\u9645\u4F1A\u52A0\u8F7D\u54EA\u4E2A\u5730\u5740\u3002", suggestion: candidates.length ? "\u8BF7\u6838\u5BF9\u4E0B\u65B9 URL \u5019\u9009\u4E0E\u8FD9\u6BB5\u5A92\u4F53\u903B\u8F91\u7684\u5B9E\u9645\u7528\u9014\uFF1B\u5982\u679C\u5019\u9009\u4E0E\u5B9E\u9645\u5730\u5740\u4E0D\u540C\uFF0C\u8BF7 Creator \u8BF4\u660E\u6700\u7EC8\u6765\u6E90\u3002" : "\u5F53\u524D\u6761\u76EE\u6CA1\u6709\u53EF\u76F4\u63A5\u8BFB\u51FA\u7684 URL\u3002\u8BF7 Creator \u63D0\u4F9B\u5B9E\u9645\u56FE\u7247/\u89C6\u9891\u5730\u5740\u6216\u6765\u6E90\u89C4\u5219\u540E\u518D\u786E\u8BA4\u3002", extra: { riskEvidence: { action: "resource", usage: "media", target: "dynamic", expression: expressionEvidence(node), candidates } } });
         }
       }
@@ -15156,9 +15269,9 @@ var PoemEjsChecker = (() => {
       if (/^http:\/\/www\.w3\.org\/(?:2000\/svg|1999\/xlink)$/i.test(target.value)) continue;
       const extra = { riskEvidence: { action: target.action, usage: target.usage, target: target.value, expression: target.expression } };
       if (dynamic) findings.push({ ruleId: "U5", severity: "warn", title: "\u8FDC\u7A0B\u76EE\u6807\u5305\u542B\u8FD0\u884C\u65F6\u66FF\u6362\u5185\u5BB9", index: target.index, detail: target.value, suggestion: "\u8BF7\u63D0\u4F9B\u6240\u6709\u53EF\u80FD\u8BBF\u95EE\u7684\u76EE\u6807\uFF0C\u6216\u5411\u5BA1\u6838\u5458\u8BF4\u660E\u52A8\u6001\u76EE\u6807\u7684\u6765\u6E90\u548C\u7528\u9014\u3002", extra });
-      if (!dynamic && trustedStaticMediaUrl(target.value, target.usage)) continue;
+      if (!dynamic && isTrustedMediaTarget(target, mediaValues)) continue;
       const official = OFFICIAL_URL_RULES.some((rule) => url.hostname.toLowerCase() === rule.host && rule.path.test(url.pathname));
-      const ruleId = ipHost(url.hostname) ? "U4" : url.protocol === "http:" ? "U3" : official ? null : "U2";
+      const ruleId = isValidatedProjectThreadUrl(url) ? null : ipHost(url.hostname) ? "U4" : url.protocol === "http:" ? "U3" : official ? null : "U2";
       if (ruleId) findings.push({ ruleId, severity: "warn", title: ruleId === "U4" ? "\u5916\u90E8\u76EE\u6807\u4F7F\u7528 IP \u5730\u5740" : ruleId === "U3" ? "\u5916\u90E8\u76EE\u6807\u4F7F\u7528 HTTP" : "\u5916\u90E8\u76EE\u6807\u9700\u8981\u786E\u8BA4\u6765\u6E90", index: target.index, detail: target.value, suggestion: target.usage === "navigation" ? "\u8BF7\u5411\u5BA1\u6838\u5458\u8BF4\u660E\u7528\u6237\u5C06\u88AB\u5E26\u5F80\u54EA\u91CC\uFF0C\u4EE5\u53CA\u4E3A\u4EC0\u4E48\u9700\u8981\u8FD9\u4E2A\u8DF3\u8F6C\u3002" : "\u8BF7\u786E\u8BA4\u8FD9\u4E2A\u76EE\u6807\u662F\u9879\u76EE\u9700\u8981\u7684\u8D44\u6E90\u6765\u6E90\uFF1B\u8FD9\u6761\u63D0\u793A\u672C\u8EAB\u4E0D\u4EE3\u8868\u8FDD\u89C4\u3002", extra });
     }
     return findings;
