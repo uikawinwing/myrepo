@@ -17,26 +17,26 @@ Shared documentation is maintained only on the canonical documentation line. Ord
 
 ## Active / normative documents
 
-| Name | Purpose | When to read | Status | Related issue(s) |
-| --- | --- | --- | --- | --- |
-| `AGENT-POLICY.md` | Repository-wide agent/Git/worktree/deployment/documentation rules | Every repository session that may mutate code/Git/docs/runtime | **Normative** | `uikawinwing/myrepo#27` |
-| `GIT-WORKFLOW.md` | Human-readable explanation/examples for the remote-canonical Git workflow | Git/branch/worktree/PR/release housekeeping | Active guide; non-normative when conflicting with Agent Policy | `uikawinwing/myrepo#27` |
-| `WORKSHOP-RELEASE-SOP.md` | Creative Workshop client SemVer vs Worker runtime release model | Client tag, staging→production release, production hotfix | Active domain SOP | release-specific issue + `uikawinwing/myrepo#27` for docs architecture |
-| `EJS-COMPATIBILITY-STANDARD.md` | Current Upload Gate/Audit Center EJS + Regex compatibility/risk contract | Checker, upload validation, audit-center changes | Active normative domain standard | `uikawinwing/myrepo#12`, `uikawinwing/myrepo#23`; historical `AkabaneSaki/myrepo#37` |
+| Name | Purpose | Audience | When to read | Status | Related issue(s) |
+| --- | --- | --- | --- | --- | --- |
+| `AGENT-POLICY.md` | Repository-wide agent/Git/worktree/deployment/documentation rules | Agents and automated sessions | Every repository session that may mutate code/Git/docs/runtime | **Normative** | `uikawinwing/myrepo#27` |
+| `GIT-WORKFLOW.md` | Human-readable explanation/examples for the remote-canonical Git workflow | Human maintainers | Git/branch/worktree/PR/release housekeeping | Active guide; non-normative when conflicting with Agent Policy | `uikawinwing/myrepo#27` |
+| `WORKSHOP-RELEASE-SOP.md` | Creative Workshop client SemVer vs Worker runtime release model | Release owners and agents handling tags/deploys | Client tag, staging→production release, production hotfix | Active domain SOP | release-specific issue + `uikawinwing/myrepo#27` for docs architecture |
+| `EJS-COMPATIBILITY-STANDARD.md` | Current Upload Gate/Audit Center EJS + Regex compatibility/risk contract | Creators plus checker/audit maintainers | Checker, upload validation, audit-center changes | Active normative domain standard | `uikawinwing/myrepo#12`, `uikawinwing/myrepo#23`; historical `AkabaneSaki/myrepo#37` |
 
 ## Maintained audits / references
 
-| Name | Purpose | Status | Related issue(s) |
-| --- | --- | --- | --- |
-| `audits/workshop-architecture.md` | Stable architecture boundaries and “where to look first” maintenance map | Maintained reference | none — standing architecture reference |
-| `audits/config-hardcode.md` | Decide which values belong in shared config vs implementation code | Maintained audit/reference | `uikawinwing/myrepo#23` for external-link policy cleanup; `uikawinwing/myrepo#27` for docs migration |
+| Name | Purpose | Audience | Status | Related issue(s) |
+| --- | --- | --- | --- | --- |
+| `audits/workshop-architecture.md` | Stable architecture boundaries and “where to look first” maintenance map | New maintainers and agents orienting in the codebase | Maintained reference | none — standing architecture reference |
+| `audits/config-hardcode.md` | Decide which values belong in shared config vs implementation code | Maintainers touching config or hardcoded constants | Maintained audit/reference | `uikawinwing/myrepo#23` for external-link policy cleanup; `uikawinwing/myrepo#27` for docs migration |
 
 ## Active plans
 
-| Name | Purpose | Status | Related issue |
-| --- | --- | --- | --- |
-| `plans/cover-image-delivery.md` | Replace wsrv-first cover delivery with a long-term public asset path | Active; revalidated 2026-10-07 | `uikawinwing/myrepo#28` |
-| `plans/workshop-persistent-session.md` | Keep one Workshop iframe/session alive across close/reopen to avoid repeated initialization | Design complete; not implemented; revalidated 2026-10-07 | `uikawinwing/myrepo#29` |
+| Name | Purpose | Audience | Status | Related issue |
+| --- | --- | --- | --- | --- |
+| `plans/cover-image-delivery.md` | Replace wsrv-first cover delivery with a long-term public asset path | Maintainers planning cover/R2 infrastructure work | Active; revalidated 2026-10-07 | `uikawinwing/myrepo#28` |
+| `plans/workshop-persistent-session.md` | Keep one Workshop iframe/session alive across close/reopen to avoid repeated initialization | Client-runtime maintainers | Design complete; not implemented; revalidated 2026-10-07 | `uikawinwing/myrepo#29` |
 
 ## Archived implementation / audit records
 
@@ -61,6 +61,7 @@ These are evidence only. Their branch/SHA/runtime statements describe the date r
 ## Maintenance rules
 
 - Plans and reports must state related issue(s); use `none — <reason>` only when a tracker would add no value.
+- Every active document must state purpose, status, audience, and when-to-read (or the index column that carries it); do not rely on a reader guessing who a document is for.
 - When a plan is completed, cancelled, or superseded, update/close its issue and move the document to `archive/`.
 - Do not write current branch/SHA/deployment state into maintained references unless the document is explicitly a dated historical record.
 - Prefer links to the owning code/config/schema/test rather than copying fast-changing lists.
