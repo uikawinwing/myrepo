@@ -1,5 +1,10 @@
 # EJS Checker v2 实施与验收记录
 
+Status: **archived completed implementation / acceptance record**  
+Purpose: preserve the v2 differential, implementation, review and acceptance evidence; do not use this as the current checker policy.  
+Archived: **2026-10-07**  
+Related issues: `uikawinwing/myrepo#12`; historical `AkabaneSaki/myrepo#37`.
+
 基线：`origin/staging` 的 `4e08cf6505b7c92ed24e38a2156c6fe0de86a5eb`。v1 的只读快照位于 `cloudflare/tests/fixtures/ejs-checker-v1.mjs`，仅供差异测试，线上不在两个引擎之间回退。
 
 ## 冻结的规则

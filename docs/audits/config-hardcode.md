@@ -1,7 +1,10 @@
 # Configuration / Hardcode Audit
 
 Date: 2026-09-19
-Last reviewed: 2026-09-29 — no new high-risk duplicated source of truth found during the documentation audit.
+Status: **maintained audit/reference**  
+Purpose: decide which changing facts belong in shared config and which constants should remain next to implementation.  
+Related issues: `uikawinwing/myrepo#23` for external-link policy cleanup; `uikawinwing/myrepo#27` for documentation migration.  
+Last reviewed: **2026-10-07** — no new high-risk duplicated product/release source of truth found during this documentation migration.
 
 ## Rule
 
@@ -28,7 +31,7 @@ The staging-host QA check also now derives from the endpoint/alias source instea
 - Both GitHub workflows run when shared config changes.
 - Stable and staging client bundles are built from the same manifest.
 - `pnpm check:workshop-bundles` verifies the **final generated JS artifacts**, not just source code.
-- Client release policy lives in `docs/WORKSHOP-RELEASE-SOP.md`; current live version numbers do not belong in SOP prose.
+- Client release policy lives in canonical documentation at `origin/documentation:docs/WORKSHOP-RELEASE-SOP.md`; current live version numbers do not belong in SOP prose.
 
 ## Already centralized correctly
 

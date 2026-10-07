@@ -1,4 +1,6 @@
-Creative Workshop taxonomy shadow migration review evidence (current working tree)
+Creative Workshop taxonomy shadow migration review evidence (historical snapshot)
+Status: archived review evidence
+Related issue: none recorded — historical taxonomy migration evidence
 
 1) cloudflare/migrations/0008_project_taxonomy_shadow.sql
 -- 新版项目分类的 shadow columns。

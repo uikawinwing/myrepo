@@ -1,6 +1,7 @@
 # Creative Workshop Client Version Handshake — 2.0.13 Archive
 
-Status: **implemented, merged, tagged, deployed**
+Status: **implemented, merged, tagged, deployed**  
+Related issue: **none — historical release work was tracked by owner PR #12**
 
 This document is a historical decision/release record. It is not an active implementation plan.
 

@@ -2,7 +2,8 @@
 
 # Creative Workshop — Current Plan
 
-Updated: **2026-09-09**
+Updated: **2026-09-09**  
+Related issue: `uikawinwing/myrepo#27` — current documentation migration supersedes this historical cleanup session
 
 This file is short-lived AI handover state only. Long-lived project truth belongs under `docs/`.
 

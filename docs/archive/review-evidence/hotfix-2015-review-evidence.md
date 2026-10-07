@@ -1,5 +1,8 @@
 # CreativeWorkshop 2.0.15 hotfix review evidence
 
+Status: **archived review evidence**  
+Related issue: **none recorded — historical 2.0.15 hotfix evidence**
+
 Scope: same-character install/update/uninstall only. Branch starts exactly at tag 2.0.14 (HEAD before changes 2ab714e011dfd6f93f0801b1567e9ac2d5d62358). Build passes.
 
 ## version.ts

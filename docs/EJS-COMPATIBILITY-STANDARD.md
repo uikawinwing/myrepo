@@ -1,6 +1,10 @@
 # Poem Workshop EJS / 正则代码检查公约
 
-版本：v1（草案）
+Status: **active normative standard**  
+Version: **v1**  
+Last reviewed: **2026-10-07**  
+Purpose: define the current Workshop Upload Gate / Audit Center EJS and Regex compatibility/risk contract.  
+Related issues: `uikawinwing/myrepo#12`, `uikawinwing/myrepo#23`; historical implementation tracker `AkabaneSaki/myrepo#37`.
 
 ## 1. 目标
 

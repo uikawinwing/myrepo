@@ -1,7 +1,9 @@
 # Creative Workshop — Architecture / Policy Reference
 
 Status: **maintained reference**  
-Updated: **2026-09-29**
+Purpose: stable architecture boundaries and “where to look first” guidance for maintainers/agents.  
+Related issue: **none — standing architecture reference, not a task plan**  
+Last reviewed: **2026-10-07**
 
 > 用途：给未来维护者 / AI session 快速判断「规则在哪里、哪些值得集中、哪些不要动」，减少每次重新全仓扫描。
 >
@@ -513,7 +515,7 @@ DB / R2 存储结构
 | Client release version | `src/CreativeWorkshop/version.ts` |
 | Web advertised release | `cloudflare/src/pages/home/render/layout.ts` |
 
-| Git / staging / production SOP | `AGENTS.md`, `docs/GIT-WORKFLOW.md` |
+| Git / staging / production SOP | `origin/documentation:docs/AGENT-POLICY.md`, `origin/documentation:docs/GIT-WORKFLOW.md` |
 
 ---
 

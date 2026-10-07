@@ -2,7 +2,8 @@
 
 # Cotel Context Handover
 
-Updated: 2026-09-10T20:15:15.710Z
+Updated: 2026-09-10T20:15:15.710Z  
+Related issue: **none — historical session handoff; no dedicated issue was recorded**
 Workspace: ws_d1c4570abd17ab123727b206
 Root: C:\Project\myrepo-git
 

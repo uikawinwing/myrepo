@@ -1,7 +1,9 @@
 # 封面图交付方案
 
 Status: **active plan — wsrv fallback implemented; direct public asset delivery pending revalidation**  
-Revalidated: **2026-09-29** — current staging still uses the wsrv-first fallback; no public R2 custom domain/bucket migration has been wired yet.
+Purpose: replace the wsrv-first stopgap with a long-term public cover asset delivery path without exposing private project files.  
+Related issue: `uikawinwing/myrepo#28`  
+Revalidated: **2026-10-07** — current staging still generates wsrv cover URLs and uses `/api/files/.../cover.*` as the origin/fallback; no public R2 custom domain/bucket migration has been wired yet.
 
 ## 当前止血方案
 

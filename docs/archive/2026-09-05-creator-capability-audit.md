@@ -2,6 +2,7 @@
 
 Status: **archived historical audit record**  
 Archived: **2026-09-19**  
+Related issues: **historical findings reference their original owner issues in the body; no single active tracker**  
 
 > 下面的 current-status / remaining-issue 描述只代表当时状态。判断当前实现时以 live code、tests 与 GitHub issues 为准。
 

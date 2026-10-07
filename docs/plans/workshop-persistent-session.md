@@ -1,7 +1,9 @@
 # Creative Workshop Persistent Session Plan
 
 Status: **design complete, not implemented**  
-Last reviewed: 2026-09-29
+Purpose: preserve one Workshop iframe/session across close/reopen so reopening does not repeat child initialization and project-list/auth reads.  
+Related issue: `uikawinwing/myrepo#29`  
+Last reviewed: **2026-10-07** — current client still has no persistent module-level Workshop session / hidden-idle destroy lifecycle.
 
 ## Purpose
 

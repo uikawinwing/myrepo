@@ -1,7 +1,8 @@
 # Creative Workshop P0 / P1 Closeout — 2026-09-07
 
 Status: **completed, accepted, promoted to production**
-Date: 2026-09-07
+Date: 2026-09-07  
+Related issues: `AkabaneSaki/myrepo#10`, `#16`, `#17`, `#18` plus the historical P0/P1 milestones
 
 This is a historical release/closeout record, not the active TODO.
 

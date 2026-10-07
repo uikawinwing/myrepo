@@ -1,5 +1,8 @@
 # Admin review continuous-flow evidence
 
+Status: **archived review evidence**  
+Related issue: **none recorded — evidence-only snapshot; use current issue tracker for active admin-review work**
+
 ## cloudflare/src/pages/home/modals.ts — queue navigation and auto-advance
 
 ```js

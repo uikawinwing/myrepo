@@ -1,5 +1,10 @@
 # Creative Workshop Release SOP
 
+Status: **active domain SOP**  
+Purpose: define Creative Workshop client SemVer versus Worker runtime release identity and the production-hotfix / planned-release rules.  
+Related issue: **release-specific issue for each release; `uikawinwing/myrepo#27` tracks documentation architecture**  
+Last reviewed: **2026-10-07**
+
 Creative Workshop uses one user-facing version line and two Worker environments.
 
 - **SillyTavern client tag** is the version users import. The current value is always read from `config/workshop.json`.

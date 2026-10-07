@@ -1,7 +1,8 @@
 # Creative Workshop 2.0.13 Release Recovery — Archive
 
 Status: **completed**  
-Date: 2026-09-05
+Date: 2026-09-05  
+Related issue: **none — historical recovery was tracked by owner PR #12**
 
 This is a historical recovery/cleanup record, not an active handover.
 
