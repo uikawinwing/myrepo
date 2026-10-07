@@ -33,7 +33,11 @@ export function collectProjectExternalLinks({
   regexEntries = [],
 } = {}) {
   const records = [];
-  const seen = new Set();
+  const seen = new Map();
+  // Longest-prefix-wins usage per URL. A URL proven to be media anywhere in the
+  // project must not be re-added as an unknown link from another source, which
+  // would put a trusted CharInfo asset straight back into the review set.
+  const usageByUrl = new Map();
 
   const addRecord = (rawValue, source, usage) => {
     const value = trimTrailingUrlPunctuation(String(rawValue ?? '').trim());
@@ -42,7 +46,23 @@ export function collectProjectExternalLinks({
 
     const key = `${source}|${url.href}`;
     if (seen.has(key)) return;
-    seen.add(key);
+    seen.set(key, true);
+
+    const previous = usageByUrl.get(url.href);
+    if (previous === LINK_USAGE.UNKNOWN && usage !== LINK_USAGE.UNKNOWN) {
+      // Upgrading a previously unknown usage: reclassify the existing record
+      // rather than storing a second, contradictory one.
+      usageByUrl.set(url.href, usage);
+      for (const record of records) {
+        if (record.url === url.href) {
+          record.usage = usage;
+          Object.assign(record, classifyExternalLink(url, usage));
+        }
+      }
+      return;
+    }
+    if (previous !== undefined) return;
+    usageByUrl.set(url.href, usage);
 
     records.push({
       url: url.href,
@@ -71,7 +91,8 @@ export function collectProjectExternalLinks({
     if (url) {
       const key = `${LINK_SOURCE.DISCORD_THREAD}|${url.href}`;
       if (!seen.has(key)) {
-        seen.add(key);
+        seen.set(key, true);
+        usageByUrl.set(url.href, LINK_USAGE.NAVIGATION);
         records.push({
           url: url.href,
           hostname: url.hostname.toLowerCase(),

@@ -14769,7 +14769,6 @@ var PoemEjsChecker = (() => {
   // src/utils/external-links/policy.mjs
   var TRUSTED_MEDIA_HOSTS = Object.freeze(["files.catbox.moe", "i.ibb.co"]);
   var DISCORD_HOSTS = Object.freeze(["discord.com", "www.discord.com"]);
-  var DISCORD_SNOWFLAKE_PATTERN = /^\d{17,20}$/;
   var MEDIA_EXTENSIONS = /\.(?:png|jpe?g|webp|gif|avif|apng|bmp|ico|mp4|webm|mov|m4v|ogv)$/i;
   var LINK_USAGE = Object.freeze({
     MEDIA: "media",
@@ -15121,9 +15120,6 @@ var PoemEjsChecker = (() => {
     while (match = pattern.exec(content)) items.push({ url: match[0].replace(/[;,\]}]+$/, ""), index: match.index, end: pattern.lastIndex });
     return items;
   }
-  function sourceUrlCandidates(content, limit = 12) {
-    return [...new Set(directUrls(content).map((item) => item.url))].slice(0, limit);
-  }
   function parsedUrl(value) {
     try {
       return new URL(value.startsWith("//") ? "https:" + value : value);
@@ -15145,13 +15141,7 @@ var PoemEjsChecker = (() => {
     }
     return false;
   }
-  function isValidatedProjectThreadUrl(url) {
-    if (url.protocol !== "https:") return false;
-    if (!DISCORD_HOSTS.includes(url.hostname.toLowerCase())) return false;
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length !== 3 || parts[0] !== "channels") return false;
-    return DISCORD_SNOWFLAKE_PATTERN.test(parts[1]) && DISCORD_SNOWFLAKE_PATTERN.test(parts[2]);
-  }
+  var GENERIC_LINK_EXEMPTIONS = /* @__PURE__ */ new Set();
   function inspectExternalLinks(entry, parsed) {
     const source = String(entry.rawContent ?? entry.content ?? ""), targets = [], hints = [], covered = [], seen = /* @__PURE__ */ new Set();
     const mediaValues = /* @__PURE__ */ new Set();
@@ -15181,10 +15171,13 @@ var PoemEjsChecker = (() => {
             hints.push({ ruleId: "AH2", severity: "hint", title: "\u5A92\u4F53\u6765\u6E90\u9700\u8981\u4EBA\u5DE5\u786E\u8BA4", index, detail: "\u6700\u7EC8\u56FE\u7247\u6216\u89C6\u9891\u5730\u5740\u7531\u8FD0\u884C\u65F6\u5185\u5BB9\u51B3\u5B9A\uFF0C\u81EA\u52A8\u68C0\u67E5\u65E0\u6CD5\u786E\u5B9A\u5B9E\u9645\u4F1A\u52A0\u8F7D\u54EA\u4E2A\u5730\u5740\u3002", suggestion: "\u5F53\u524D\u6761\u76EE\u4F4D\u4E8E\u89D2\u8272\u7ACB\u7ED8\u6258\u7BA1\u533A\u5757\u5185\uFF0C\u4F46\u4E0D\u662F\u53EF\u786E\u8BA4\u7684\u7ACB\u7ED8\u5A92\u4F53\u4EE3\u7801\u3002\u8BF7\u8BF4\u660E\u8FD9\u6BB5\u4EE3\u7801\u5B9E\u9645\u4F1A\u52A0\u8F7D\u54EA\u4E2A\u5730\u5740\u3002", extra: { riskEvidence: { action: "resource", usage: "media", target: "dynamic", expression: expressionEvidence(node), candidates: charInfoBlock.mediaUrls } } });
             continue;
           }
-          const candidates = generatedCharInfoMedia && charInfoBlock.mediaUrls.length ? charInfoBlock.mediaUrls : sourceUrlCandidates(source);
-          for (const candidate of candidates) if (isTrustedStaticMediaUrl(candidate)) mediaValues.add(candidate);
-          if (classifyDynamicMediaCandidates(candidates).trust === LINK_TRUST.TRUSTED) continue;
-          hints.push({ ruleId: "AH2", severity: "hint", title: "\u5A92\u4F53\u6765\u6E90\u9700\u8981\u4EBA\u5DE5\u786E\u8BA4", index, detail: "\u6700\u7EC8\u56FE\u7247\u6216\u89C6\u9891\u5730\u5740\u7531\u8FD0\u884C\u65F6\u5185\u5BB9\u51B3\u5B9A\uFF0C\u81EA\u52A8\u68C0\u67E5\u65E0\u6CD5\u786E\u5B9A\u5B9E\u9645\u4F1A\u52A0\u8F7D\u54EA\u4E2A\u5730\u5740\u3002", suggestion: candidates.length ? "\u8BF7\u6838\u5BF9\u4E0B\u65B9 URL \u5019\u9009\u4E0E\u8FD9\u6BB5\u5A92\u4F53\u903B\u8F91\u7684\u5B9E\u9645\u7528\u9014\uFF1B\u5982\u679C\u5019\u9009\u4E0E\u5B9E\u9645\u5730\u5740\u4E0D\u540C\uFF0C\u8BF7 Creator \u8BF4\u660E\u6700\u7EC8\u6765\u6E90\u3002" : "\u5F53\u524D\u6761\u76EE\u6CA1\u6709\u53EF\u76F4\u63A5\u8BFB\u51FA\u7684 URL\u3002\u8BF7 Creator \u63D0\u4F9B\u5B9E\u9645\u56FE\u7247/\u89C6\u9891\u5730\u5740\u6216\u6765\u6E90\u89C4\u5219\u540E\u518D\u786E\u8BA4\u3002", extra: { riskEvidence: { action: "resource", usage: "media", target: "dynamic", expression: expressionEvidence(node), candidates } } });
+          const candidates = generatedCharInfoMedia && charInfoBlock.mediaUrls.length ? charInfoBlock.mediaUrls : null;
+          const suppressible = Boolean(generatedCharInfoMedia) && classifyDynamicMediaCandidates(candidates).trust === LINK_TRUST.TRUSTED;
+          if (suppressible) {
+            for (const candidate of candidates) if (isTrustedStaticMediaUrl(candidate)) mediaValues.add(candidate);
+            continue;
+          }
+          hints.push({ ruleId: "AH2", severity: "hint", title: "\u5A92\u4F53\u6765\u6E90\u9700\u8981\u4EBA\u5DE5\u786E\u8BA4", index, detail: "\u6700\u7EC8\u56FE\u7247\u6216\u89C6\u9891\u5730\u5740\u7531\u8FD0\u884C\u65F6\u5185\u5BB9\u51B3\u5B9A\uFF0C\u81EA\u52A8\u68C0\u67E5\u65E0\u6CD5\u786E\u5B9A\u5B9E\u9645\u4F1A\u52A0\u8F7D\u54EA\u4E2A\u5730\u5740\u3002", suggestion: candidates?.length ? "\u8BF7\u6838\u5BF9\u4E0B\u65B9 URL \u5019\u9009\u4E0E\u8FD9\u6BB5\u5A92\u4F53\u903B\u8F91\u7684\u5B9E\u9645\u7528\u9014\uFF1B\u5982\u679C\u5019\u9009\u4E0E\u5B9E\u9645\u5730\u5740\u4E0D\u540C\uFF0C\u8BF7 Creator \u8BF4\u660E\u6700\u7EC8\u6765\u6E90\u3002" : "\u5F53\u524D\u6761\u76EE\u6CA1\u6709\u53EF\u76F4\u63A5\u8BFB\u51FA\u7684 URL\u3002\u8BF7 Creator \u63D0\u4F9B\u5B9E\u9645\u56FE\u7247/\u89C6\u9891\u5730\u5740\u6216\u6765\u6E90\u89C4\u5219\u540E\u518D\u786E\u8BA4\u3002", extra: { riskEvidence: { action: "resource", usage: "media", target: "dynamic", expression: expressionEvidence(node), candidates: candidates ?? [] } } });
         }
       }
       for (const { node, scope } of analysis.nodes) {
@@ -15271,7 +15264,7 @@ var PoemEjsChecker = (() => {
       if (dynamic) findings.push({ ruleId: "U5", severity: "warn", title: "\u8FDC\u7A0B\u76EE\u6807\u5305\u542B\u8FD0\u884C\u65F6\u66FF\u6362\u5185\u5BB9", index: target.index, detail: target.value, suggestion: "\u8BF7\u63D0\u4F9B\u6240\u6709\u53EF\u80FD\u8BBF\u95EE\u7684\u76EE\u6807\uFF0C\u6216\u5411\u5BA1\u6838\u5458\u8BF4\u660E\u52A8\u6001\u76EE\u6807\u7684\u6765\u6E90\u548C\u7528\u9014\u3002", extra });
       if (!dynamic && isTrustedMediaTarget(target, mediaValues)) continue;
       const official = OFFICIAL_URL_RULES.some((rule) => url.hostname.toLowerCase() === rule.host && rule.path.test(url.pathname));
-      const ruleId = isValidatedProjectThreadUrl(url) ? null : ipHost(url.hostname) ? "U4" : url.protocol === "http:" ? "U3" : official ? null : "U2";
+      const ruleId = GENERIC_LINK_EXEMPTIONS.has(url.href) ? null : ipHost(url.hostname) ? "U4" : url.protocol === "http:" ? "U3" : official ? null : "U2";
       if (ruleId) findings.push({ ruleId, severity: "warn", title: ruleId === "U4" ? "\u5916\u90E8\u76EE\u6807\u4F7F\u7528 IP \u5730\u5740" : ruleId === "U3" ? "\u5916\u90E8\u76EE\u6807\u4F7F\u7528 HTTP" : "\u5916\u90E8\u76EE\u6807\u9700\u8981\u786E\u8BA4\u6765\u6E90", index: target.index, detail: target.value, suggestion: target.usage === "navigation" ? "\u8BF7\u5411\u5BA1\u6838\u5458\u8BF4\u660E\u7528\u6237\u5C06\u88AB\u5E26\u5F80\u54EA\u91CC\uFF0C\u4EE5\u53CA\u4E3A\u4EC0\u4E48\u9700\u8981\u8FD9\u4E2A\u8DF3\u8F6C\u3002" : "\u8BF7\u786E\u8BA4\u8FD9\u4E2A\u76EE\u6807\u662F\u9879\u76EE\u9700\u8981\u7684\u8D44\u6E90\u6765\u6E90\uFF1B\u8FD9\u6761\u63D0\u793A\u672C\u8EAB\u4E0D\u4EE3\u8868\u8FDD\u89C4\u3002", extra });
     }
     return findings;
