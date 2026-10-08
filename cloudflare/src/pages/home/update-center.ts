@@ -147,7 +147,8 @@ function openWorkshopUpdateHub() {
     + '</small></span></div>'
     + (scriptCount ? '<button class="btn btn-outline" type="button" data-update-hub-scripts>查看</button>' : '<span class="workshop-update-hub-ok"><i class="fas fa-circle-check"></i> 最新</span>')
     + '</section>';
-  const overlay = openModal('<div class="workshop-update-hub">' + dlcHtml + scriptHtml + '</div>', '<i class="fas fa-bell"></i> 更新');
+  const repairHtml = isEmbedded ? '<section class="workshop-update-hub-section"><div><i class="fas fa-screwdriver-wrench"></i><span><strong>DLC 修复</strong><small>仅在本机 DLC 异常时使用</small></span></div><button class="btn btn-outline" type="button" data-update-hub-repair>检查</button></section>' : '';
+  const overlay = openModal('<div class="workshop-update-hub">' + dlcHtml + scriptHtml + repairHtml + '</div>', '<i class="fas fa-bell"></i> 更新与修复');
   overlay.querySelector('[data-update-hub-dlc]')?.addEventListener('click', () => {
     overlay.remove();
     void openDlcUpdateCenter();
@@ -155,6 +156,10 @@ function openWorkshopUpdateHub() {
   overlay.querySelector('[data-update-hub-scripts]')?.addEventListener('click', () => {
     overlay.remove();
     openScriptDependencyHealthModal();
+  });
+  overlay.querySelector('[data-update-hub-repair]')?.addEventListener('click', () => {
+    overlay.remove();
+    openDlcRepairModal();
   });
   return overlay;
 }

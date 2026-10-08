@@ -143,8 +143,6 @@ const state = {
   searchDraft: '',
   mobileToolMode: '',
   searchKeyword: '',
-  minLikes: 0,
-  minDownloads: 0,
   userMenuOpen: false,
   sortMenuOpen: false,
   fontMenuOpen: false,

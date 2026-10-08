@@ -38,6 +38,7 @@ export const homeAppActionsScript = String.raw`
     const mobileInstalledProjectsBtn = document.getElementById('mobileInstalledProjectsBtn');
     const mobileDlcRepairBtn = document.getElementById('mobileDlcRepairBtn');
     const mobileDlcUpdateStatusBtn = document.getElementById('mobileDlcUpdateStatusBtn');
+    const mobileUpdateHubBtn = document.getElementById('mobileUpdateHubBtn');
     const mobileHeaderNoticeBtn = document.getElementById('mobileHeaderNoticeBtn');
     const mobileMyProjectsBtn = document.getElementById('mobileMyProjectsBtn');
     const mobileUploadBtn = document.getElementById('mobileUploadBtn');
@@ -71,6 +72,7 @@ export const homeAppActionsScript = String.raw`
     if (discordCommunityBtn) discordCommunityBtn.onclick = event => { event.stopPropagation(); openExternalLinkWarning('https://discord.com/channels/1417861565679669272/1556973079853277244'); };
     if (mobileDiscordCommunityBtn) mobileDiscordCommunityBtn.onclick = event => { event.stopPropagation(); closeMobileTool(); openExternalLinkWarning('https://discord.com/channels/1417861565679669272/1556973079853277244'); };
     if (mobileDlcUpdateStatusBtn) mobileDlcUpdateStatusBtn.onclick = () => void openDlcUpdateCenter();
+    if (mobileUpdateHubBtn) mobileUpdateHubBtn.onclick = () => { closeMobileTool(); openWorkshopUpdateHub(); };
     scriptDependencyHealthBtns.forEach(button => {
       button.onclick = event => {
         event.stopPropagation();
@@ -113,7 +115,7 @@ export const homeAppActionsScript = String.raw`
     };
     if (mobileToolClose) mobileToolClose.onclick = closeMobileTool;
     if (mobileToolBackdrop) mobileToolBackdrop.onclick = closeMobileTool;
-    if (mobileHeaderNoticeBtn) mobileHeaderNoticeBtn.onclick = event => { event.stopPropagation(); openMobileTool('account'); };
+    if (mobileHeaderNoticeBtn) mobileHeaderNoticeBtn.onclick = event => { event.stopPropagation(); openWorkshopUpdateHub(); };
     document.querySelectorAll('[data-mobile-tool]').forEach(button => {
       button.addEventListener('click', event => {
         event.stopPropagation();
@@ -507,49 +509,6 @@ export const homeAppActionsScript = String.raw`
       });
     });
 
-    const applyMetricFilter = (kind, rawValue) => {
-      if (state.filterRequestPending) return;
-      const value = Math.max(0, Math.floor(Number(rawValue || 0)));
-      if (kind === 'likes') state.minLikes = value;
-      else if (kind === 'downloads') state.minDownloads = value;
-      else return;
-
-      if (state.viewMode === 'discover') {
-        state.viewMode = 'catalog';
-        state.sortMode = 'published';
-        state.activeBaseTag = 'all';
-        state.activeTags = [];
-        state.searchKeyword = '';
-        state.searchDraft = '';
-        lastCommittedSearchKeyword = '';
-      }
-      state.mobileToolMode = '';
-      scrollWorkshopToTop();
-      resetProjectPagination();
-      state.filterRequestPending = true;
-      renderApp();
-      fetchProjects(true, { page: 0, pageSize: state.projectPagination.pageSize }).finally(() => {
-        state.filterRequestPending = false;
-        renderApp();
-      });
-    };
-
-    document.querySelectorAll('[data-metric-filter]').forEach(select => {
-      select.addEventListener('change', event => {
-        event.stopPropagation();
-        applyMetricFilter(select.dataset.metricFilter, select.value);
-      });
-      select.addEventListener('click', event => event.stopPropagation());
-    });
-
-    document.querySelectorAll('[data-clear-metric-filter]').forEach(button => {
-      button.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        applyMetricFilter(button.dataset.clearMetricFilter, 0);
-      });
-    });
-
     const filterLocalSearchTagSuggestions = (input, value) => {
       const root = input?.closest('[data-unified-search]');
       if (!root) return;
@@ -812,6 +771,7 @@ export const homeAppActionsScript = String.raw`
         const projectId = card.dataset.id;
         const project = filteredProjects.find(item => item.id === projectId)
           || state.projects.find(item => item.id === projectId)
+          || Object.values(state.discoverShelves || {}).flatMap(items => Array.isArray(items) ? items : []).find(item => item?.id === projectId)
           || (state.devTeamCurators || []).flatMap(curator => curator.recommendations || []).map(item => item.project).find(item => item?.id === projectId);
         if (project) showProjectDetail(project);
       };

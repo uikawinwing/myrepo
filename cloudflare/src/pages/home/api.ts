@@ -163,8 +163,10 @@ async function fetchSubscriptions(forceRefresh = false) {
 async function fetchDiscoverShelves(forceRefresh = false) {
   const shelfSpecs = [
     { key: 'discover', sort: 'discover', pageSize: 10 },
+    { key: 'downloads', sort: 'downloads', pageSize: 10 },
     { key: 'published', sort: 'published', pageSize: 5 },
-    { key: 'updated', sort: 'updated', pageSize: 5 },
+    // Recently updated projects remain available via the Browse sort.
+    // This keeps the home query count unchanged when Top Charts is shown.
   ];
   setDiscoverShelves({ ...state.discoverShelves, loading: true });
   renderApp();
@@ -303,10 +305,6 @@ async function fetchProjects(forceRefresh = false, options = {}) {
   if (searchKeyword) {
     params.set('search', searchKeyword);
   }
-  const minLikes = Math.max(0, Math.floor(Number(state.minLikes || 0)));
-  if (minLikes > 0) params.set('minLikes', String(minLikes));
-  const minDownloads = Math.max(0, Math.floor(Number(state.minDownloads || 0)));
-  if (minDownloads > 0) params.set('minDownloads', String(minDownloads));
 
   const canUseProjectListClientCache = !state.showOnlyMyProjects && !state.showSubscribedAndInstalledProjects;
   forceRefresh = Boolean(forceRefresh && options.bypassClientCache);

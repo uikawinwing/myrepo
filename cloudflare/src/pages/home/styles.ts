@@ -91,11 +91,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helve
 .sort-menu-trigger:hover { background:rgba(255,255,255,.045); }
 .sort-menu .user-menu-dropdown { min-width:240px; }
 .sort-menu-item.is-disabled,.mobile-sort-option.is-disabled { opacity:.46; cursor:not-allowed; }
-.metric-filter-panel { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; padding:10px; border-top:1px solid rgba(255,255,255,.065); }
-.metric-filter-panel > span { grid-column:1/-1; color:#77756f; font-size:.66rem; font-weight:700; letter-spacing:.04em; }
-.metric-filter-panel label { min-width:0; display:flex; align-items:center; gap:6px; color:#9a9892; font-size:.7rem; }
-.metric-filter-panel select { width:100%; min-width:0; height:34px; border:1px solid rgba(255,255,255,.08); border-radius:8px; background:#17181b; color:#d8d6d1; padding:0 7px; }
-.metric-filter-panel--mobile { margin-top:10px; padding:12px 0 0; }
 .projects-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:24px; margin-top:24px; }
 .project-pagination { margin:28px 0 12px; display:flex; flex-direction:column; align-items:center; gap:14px; }
 .project-pagination-summary { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 10px; color:var(--cw-text-secondary); font-size:.82rem; text-align:center; }
@@ -1497,6 +1492,10 @@ button.discover-card-stat:disabled { cursor:default; opacity:.58; }
 .project-detail-modal .detail-identity-separator { color:#5f5e5a; }
 .project-detail-modal .detail-type-label { color:#a9cdb9; font-weight:720; }
 .project-detail-modal .detail-actions-panel { display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:0; border:0; border-radius:0; background:none; }
+.project-detail-modal .detail-management-tools { width:100%; border-top:1px solid rgba(255,255,255,.09); padding-top:9px; }
+.project-detail-modal .detail-management-tools summary { display:flex; align-items:center; gap:8px; min-height:36px; color:var(--cw-text-secondary); cursor:pointer; font-size:.79rem; }
+.project-detail-modal .detail-management-tools > .btn { margin:8px 6px 0 0; }
+.project-detail-modal .detail-technical-section + .detail-technical-section { margin-top:24px; padding-top:20px; border-top:1px solid rgba(255,255,255,.09); }
 .project-detail-modal .detail-discord-thread { width:100%; display:flex; align-items:center; gap:8px; padding:9px 10px; border:1px solid rgba(88,101,242,.26); border-radius:9px; background:rgba(88,101,242,.08); color:#c9cdfd; text-decoration:none; font-size:.75rem; font-weight:720; }
 .project-detail-modal .detail-discord-thread span { flex:1; }
 .project-detail-modal .detail-discord-thread:hover { border-color:rgba(88,101,242,.48); background:rgba(88,101,242,.14); color:#e3e5ff; }
@@ -2599,6 +2598,10 @@ body,.logo h1,.sidebar-brand-copy strong,.mobile-tool-sheet-head strong,.project
 
 @media (max-width:640px) {
   .project-detail-modal .detail-page-tabs { display:none!important; }
+  .project-detail-modal .mobile-detail-tabs { display:flex; gap:8px; padding:4px 0 12px; margin:0 0 12px; border-bottom:1px solid rgba(255,255,255,.11); }
+  .project-detail-modal .mobile-detail-tabs button { flex:1; min-height:42px; border:0; border-radius:9px; background:transparent; color:var(--cw-text-secondary); font-size:.88rem; font-weight:700; line-height:1.2; font-family:inherit; }
+  .project-detail-modal .mobile-detail-tabs button.active { color:var(--cw-text-primary); background:rgba(190,164,125,.13); }
+  .project-detail-modal .mobile-detail-tab-panel[hidden] { display:none!important; }
   .project-detail-modal .mobile-entry-reader-dock {
     grid-template-columns:96px 44px minmax(0,1fr) 44px;
   }

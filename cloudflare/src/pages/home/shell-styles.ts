@@ -1526,6 +1526,12 @@ export const homeShellStyles = String.raw`
 
   .mobile-account-tool-panel { padding:8px; }
   .mobile-account-panel { display:flex; flex-direction:column; gap:4px; }
+  .mobile-management-group { margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,.10); }
+  .mobile-management-group > summary { display:flex; align-items:center; gap:10px; min-height:42px; padding:10px; color:var(--cw-text-secondary); font-size:.84rem; font-weight:700; cursor:pointer; list-style:none; }
+  .mobile-management-group > summary::-webkit-details-marker { display:none; }
+  .mobile-management-group > summary .fa-chevron-down { margin-left:auto; }
+  .mobile-management-group[open] > summary .fa-chevron-down { transform:rotate(180deg); }
+  .mobile-management-group > .mobile-account-action { width:100%; margin-top:2px; }
   .mobile-account-profile {
     display:flex;
     align-items:center;
