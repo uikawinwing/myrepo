@@ -3,7 +3,7 @@
 > **Canonical branch:** `origin/documentation`  
 > **Status:** active index  
 > **Purpose:** tell humans and agents which shared document to read, why it exists, and which issue tracks its state  
-> **Related issue:** `uikawinwing/myrepo#27`
+> **Related issue:** `uikawinwing/myrepo#27`, `uikawinwing/myrepo#46`
 
 Shared documentation is maintained only on the canonical documentation line. Ordinary code/task branches should not maintain their own `docs/` copy.
 
@@ -13,15 +13,15 @@ Shared documentation is maintained only on the canonical documentation line. Ord
 2. Read this index from the refreshed ref.
 3. Read only the documents relevant to the current task.
 4. Treat `archive/` as history, never as current instructions.
-5. When changing shared docs, branch from refreshed `origin/documentation` and merge back there.
+5. When changing shared docs, branch from refreshed `origin/documentation` and merge back there. Code tasks instead start from immutable `upstream/main` and test one pinned SHA at a time on the Master Staging Worker; legacy `origin/staging` is frozen (#46).
 
 ## Active / normative documents
 
 | Name | Purpose | Audience | When to read | Status | Related issue(s) |
 | --- | --- | --- | --- | --- | --- |
-| `AGENT-POLICY.md` | Repository-wide agent/Git/worktree/deployment/documentation rules | Agents and automated sessions | Every repository session that may mutate code/Git/docs/runtime | **Normative** | `uikawinwing/myrepo#27` |
-| `GIT-WORKFLOW.md` | Human-readable explanation/examples for the remote-canonical Git workflow | Human maintainers | Git/branch/worktree/PR/release housekeeping | Active guide; non-normative when conflicting with Agent Policy | `uikawinwing/myrepo#27` |
-| `WORKSHOP-RELEASE-SOP.md` | Creative Workshop client SemVer vs Worker runtime release model | Release owners and agents handling tags/deploys | Client tag, staging→production release, production hotfix | Active domain SOP | release-specific issue + `uikawinwing/myrepo#27` for docs architecture |
+| `AGENT-POLICY.md` | Normative continuous Worker delivery/Git/worktree/deployment/documentation rules | Agents and automated sessions | Every repository session that may mutate code/Git/docs/runtime | **Normative** | `uikawinwing/myrepo#27`, `uikawinwing/myrepo#46` |
+| `GIT-WORKFLOW.md` | Human-readable candidate staging and exact-SHA continuous delivery workflow | Human maintainers | Git/branch/worktree/PR/release housekeeping | Active guide; non-normative when conflicting with Agent Policy | `uikawinwing/myrepo#27`, `uikawinwing/myrepo#46` |
+| `WORKSHOP-RELEASE-SOP.md` | Creative Workshop continuous Worker/Web delivery vs Client SemVer model | Release owners and agents handling tags/deploys | Client SemVer release, candidate→production promotion, production hotfix | Active domain SOP | release-specific issue + `uikawinwing/myrepo#46` for delivery model |
 | `EJS-COMPATIBILITY-STANDARD.md` | Current Upload Gate/Audit Center EJS + Regex compatibility/risk contract | Creators plus checker/audit maintainers | Checker, upload validation, audit-center changes | Active normative domain standard | `uikawinwing/myrepo#12`, `uikawinwing/myrepo#23`; historical `AkabaneSaki/myrepo#37` |
 
 ## Maintained audits / references

@@ -39,8 +39,9 @@ If canonical documentation cannot be refreshed/read, stop before destructive rep
 
 ## Canonical Git refs
 
-- Staging code source of truth: `origin/staging`
-- Production code source of truth: `upstream/main`
+- All new code task baseline / Production source: refreshed `upstream/main` exact SHA
+- Master Staging: isolated Cloudflare candidate runtime, not a Git integration line
+- Historical `origin/staging`: frozen; do not create tasks or deploy from it (#46)
 - Shared documentation source of truth: `origin/documentation`
 
 Local branches named `main` or `staging` are not authoritative and may not exist.
@@ -49,7 +50,7 @@ Never use the current workspace HEAD, a local mirror branch, or `mergedIntoWorks
 
 ## Worktrees
 
-Development happens on short-lived task branches/worktrees created from a freshly refreshed canonical ref.
+Code development happens on short-lived task branches/worktrees created from freshly refreshed `upstream/main` exact SHA; documentation tasks start from `origin/documentation`.
 
 Prefer direct sibling worktrees beside the primary checkout. Do not create long-lived nested task worktrees.
 

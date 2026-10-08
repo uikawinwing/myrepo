@@ -1,251 +1,121 @@
-# Git / Staging / Release Workflow
+# Git / Candidate Staging / Release Workflow
 
 > **Status:** active human-facing guide  
-> **Purpose:** explain the repository's remote-canonical Git/worktree/PR flow in practical terms  
-> **Related issue:** `uikawinwing/myrepo#27`  
-> **Normative policy:** `origin/documentation:docs/AGENT-POLICY.md`
+> **Purpose:** practical, low-maintenance Worker/Web continuous delivery and client release workflow  
+> **Related issues:** `uikawinwing/myrepo#27`, `uikawinwing/myrepo#46`  
+> **Normative policy:** `origin/documentation:docs/AGENT-POLICY.md`  
+> **Last reviewed:** 2026-10-08
 
-If this guide conflicts with the canonical Agent Policy, the Agent Policy wins.
+If this guide conflicts with canonical Agent Policy, the Agent Policy wins.
 
-## 1. Canonical refs
+## 1. What is canonical?
 
-| Purpose | Canonical ref |
+| Purpose | Source |
 | --- | --- |
-| Staging code/integration | `origin/staging` |
-| Production code | `upstream/main` |
-| Shared documentation | `origin/documentation` |
+| Code baseline for **all new tasks**, including features/hotfixes | `upstream/main` (`AkabaneSaki/myrepo`) |
+| Shared documentation | `origin/documentation` (`uikawinwing/myrepo`) |
+| Task work | short-lived `origin/<task-branch>` from exact `upstream/main` |
+| Master Staging | **Cloudflare test Worker**, one pinned candidate SHA at a time |
+| Production | **Cloudflare live Worker**, from approved merged Owner-main SHA |
+| Historical old staging branch | `origin/staging` — frozen, not a source or merge destination |
+| Old staging preservation | `origin/backup/staging-pre-continuous-delivery-20261008` |
 
-`origin/main` may be a fork mirror. It is not the production source of truth.
+`origin/main`, local `main`, local `staging`, and workspace HEAD are not substitutes for refreshed `upstream/main`.
 
-Long-lived local `main` / `staging` mirrors are not required.
-
-The primary checkout may sit on `workspace/control`, which is only a management branch. It is not an integration baseline.
-
-## 2. Remote-canonical rule
-
-Before starting a task, refresh the canonical ref you actually need.
-
-Do not assume a local branch is current merely because it is named `main` or `staging`.
-
-Do not use the primary workspace HEAD as proof that a task is merged.
-
-### Normal code task
-
-Normal feature/fix/refactor work starts from:
-
-`origin/staging`
+## 2. One Issue → one candidate → Production
 
 ```text
-fetch/refresh origin/staging
-→ create short-lived task branch/worktree from exact origin/staging
-→ implement
-→ test/review
-→ commit intended files
-→ push task branch to origin
-→ PR → origin/staging
-→ merge
-→ refresh origin/staging
-→ verify commit/patch is present
-→ remove task worktree/branch
+read origin/documentation:docs/INDEX.md + AGENT-POLICY.md
+→ refresh upstream/main and record immutable 40-char Git SHA
+→ create sibling task worktree/branch at that baseline
+→ implement the smallest Issue/dependency-cluster change
+→ run project tests, checker/audit guards, cost/schema/security/compatibility checks
+→ lock and CheckOnly exact candidate SHA for Master Staging
+→ deploy to Master Staging (not the historical staging branch)
+→ smoke test, confirm Master acceptance, preserve rollback target
+→ open Owner PR to upstream/main, review and pass CI
+→ merge into Owner main
+→ deploy **exact merged Owner-main SHA** to Production with guarded helper
+→ verify live Worker/account/bindings/version and user behavior
+→ close Issue, remove clean disposable task worktree/branch as appropriate
 ```
 
-### Production hotfix
+Parallel code tasks are fine. Shared staging deployments and Production promotion are serialized; one candidate must not overwrite another team's active acceptance test.
 
-Production-only urgent fixes start from:
+For a production incident, apply the **same Owner-main baseline, scoped PR, guarded exact-SHA deploy path**. Do not forward-port hotfixes to `origin/staging`.
 
-`upstream/main`
+## 3. Worker/Web versus ST Client
 
-```text
-fetch/refresh upstream/main
-→ create hotfix branch/worktree from exact upstream/main
-→ implement/test against production baseline
-→ owner PR → upstream/main
-→ merge
-→ deploy exact approved owner-main source
-→ forward-port logical fix → origin/staging
-→ verify both canonical refs
-→ cleanup
-```
+- Worker/Web-only changes with backwards-compatible APIs may ship independently; **no client SemVer tag**.
+- ST Client source/bundle changes that users need to import receive an intentional **immutable SemVer tag**.
+- Breaking ST Bridge/install-state changes need a deliberate client release lane (e.g. `release/2.3-client`) plus compatibility and migration review; do not silently bundle them into an unrelated Worker change.
+- `config/workshop.json` holds current client version data. Do not infer current tags from Issue titles or maintain a Worker version line.
 
-Do not merge the whole staging feature line back into production merely to carry one hotfix.
+Read `docs/WORKSHOP-RELEASE-SOP.md` for support rules and release checklist.
 
-## 3. Documentation workflow
+## 4. Documentation and policy
 
-Shared docs do not live on ordinary code/task branches.
-
-Canonical docs:
-
-`origin/documentation:docs/`
-
-To read docs:
+The sole shared docs source is `origin/documentation:docs/`. To change it:
 
 ```text
 refresh origin/documentation
-→ read docs/INDEX.md from that ref
-→ read only the relevant canonical docs
+→ create short-lived docs branch from that ref
+→ modify INDEX and only affected canonical documents
+→ review consistency, link to the owning Issue
+→ PR/merge back into origin/documentation
+→ verify canonical content, retire docs task branch
 ```
 
-To change docs:
+Do not edit canonical docs on an ordinary Worker/Web feature branch. Root `AGENTS.md` stays a **thin pointer** to canonical docs, not a second copy of policy. The fork issue tracker tracks plans/features; Owner issue tracker tracks actual Production bugs and blocker fixes.
+
+## 5. Deployment boundaries
+
+Tracked helper source: `scripts/deployment/` (see Owner PR #102).  
+Machine-installed helper/profile: `.cotel/local/one-click-deploy/` (credentials and account-specific bindings must stay local).
+
+Before deployment:
+
+1. Verify Git source branch and **full pinned SHA**, target Worker/account/D1/R2, clean worktree and allowed source ancestry.
+2. Confirm the installed helper and tracked source agree; installed profiles retain their reviewed permissions.
+3. Use `CheckOnly`, Wrangler dry-run, D1 cost gate and migration ledger (for the actual target database).
+4. Record previous Cloudflare deployment/version for rollback.
+5. Deploy and verify resulting live Worker identity/bindings/HTTP behavior; restore source checkout and release locks.
+
+Master Staging is **Johnjohnson67076 / poemofdestinycreativeworkshop-master-staging**. Never confuse it with obsolete Owner `poemofdestinycreativeworkshop-staging`.
+
+A `CheckOnly` result is not proof of deployment. Git SHA and Cloudflare deployment/version IDs are different facts. Do not bypass failures with raw `wrangler deploy`, branch switches or profile changes.
+
+## 6. Legacy `origin/staging` retirement
+
+Migration issue: `uikawinwing/myrepo#46`.
+
+- Completed and superseded Worker features in old staging must **not** be re-merged into Production just to simplify cleanup.
+- Identify and preserve test-only tools and optional non-essential UX separately (with issue or retained historical backup).
+- Preserve `origin/backup/staging-pre-continuous-delivery-20261008`; leave existing remote historical `origin/staging` frozen until explicit retention/deletion decision.
+- Never reset, force-push, merge whole old staging, re-run a migration, delete active worktrees or destroy unreviewed user work.
+- **Retired as a development baseline** does not mean **physically deleted**. A branch may remain as inert evidence without blocking completion of #46.
+
+## 7. Safe cleanup
+
+Check target `upstream/main` for code or `origin/documentation` for docs. Inspect actual dirty/clean state; verify required work is shipped, patch-equivalent, obsolete with explicit decision, or preserved elsewhere before removing a branch/worktree.
+
+Keep unique or dirty unrelated worktrees intact. Only request managed Git cleanup for reviewed, clean task branches and verify expected refs/SHAs again immediately before branch deletion.
+
+## 8. Release and incident reporting
+
+Report independently:
 
 ```text
-refresh origin/documentation
-→ create temporary docs task branch/worktree
-→ edit docs
-→ review
-→ PR/merge → origin/documentation
-→ cleanup
+Code: task branch / exact baseline and merged Owner-main SHA
+Staging: Master Worker identity / candidate SHA / deployment ID / tested or unchanged
+Production: Worker identity / exact merged SHA / deployment ID / tested or unchanged
+Client: latest released SemVer tag if changed, otherwise unchanged
+Docs: canonical origin/documentation SHA
+Cleanup: remaining preserved branches/backups and specific blockers
 ```
 
-Do not update a stale `docs/` snapshot from a feature/hotfix/refactor branch.
+The stage of a Git PR is never evidence that a Worker is deployed. The age of a runtime deployment is not evidence of newer code.
 
-Plans/reports must identify their related GitHub issue(s), or explicitly say why no issue exists.
+## 9. Default choice
 
-## 4. Issue tracker split
-
-Use the fork tracker for staging/future work:
-
-`uikawinwing/myrepo`
-
-Typical use:
-
-- future features
-- staging UX/enhancements
-- experiments
-- staging technical debt
-- documentation/repository hygiene
-- active plans before production
-
-Use the owner tracker for production incidents:
-
-`AkabaneSaki/myrepo`
-
-Typical use:
-
-- production bugs/regressions
-- production hotfixes
-- production security/privacy/performance incidents
-- production release blockers
-
-If work moves from an old owner planning issue into the fork, link the replacement and close the old planning issue when appropriate.
-
-## 5. Git and runtime terminology
-
-These are different states:
-
-- `origin/staging` = Git integration branch
-- staging Worker = Cloudflare test runtime
-- staging site = test site backed by that Worker
-- `upstream/main` = production Git source
-- production Worker = live runtime
-
-Do not report only “staging updated” or “staging ready”.
-
-Prefer:
-
-```text
-Git:
-origin/staging = <sha>
-
-Runtime:
-staging Worker deployed Git SHA = <sha>
-Worker version = <id>
-
-Production:
-unchanged
-```
-
-## 6. Staging deployment order
-
-Normal staging order:
-
-```text
-task branch
-→ tests/review
-→ PR/merge into origin/staging
-→ refresh origin/staging
-→ record exact SHA
-→ deployment helper
-→ staging Worker
-→ staging-site verification
-→ Master acceptance
-```
-
-Do not deploy an ordinary task branch directly to the normal staging Worker.
-
-If isolated runtime testing is necessary before integration, use a separately named preview/temporary Worker.
-
-## 7. Deployment helper
-
-Use the repository's existing fail-closed helper:
-
-`.cotel/local/one-click-deploy/deploy-worker.ps1`
-
-Target/source policy lives in profiles under:
-
-`.cotel/local/one-click-deploy/profiles/`
-
-The helper:
-
-1. verifies remotes/cleanliness/policy;
-2. fetches the selected remote source;
-3. resolves an exact commit;
-4. temporarily detaches to that commit;
-5. deploys;
-6. restores the prior checkout.
-
-Therefore local branches named `main` or `staging` are not required.
-
-A helper failure is a blocker to fix, not permission to run ad-hoc `wrangler deploy`.
-
-## 8. Release/version semantics
-
-This document does not duplicate the product release decision tree.
-
-Read the canonical release SOP:
-
-`origin/documentation:docs/WORKSHOP-RELEASE-SOP.md`
-
-In short:
-
-- Worker/runtime changes do not have their own SemVer line.
-- Client SemVer belongs to the SillyTavern client artifact.
-- Production hotfixes start from exact production source.
-- Logical hotfixes are forward-ported into staging.
-- Planned staging feature releases follow the planned client release line.
-
-Current live version values come from `config/workshop.json`, not documentation prose.
-
-## 9. Cleanup
-
-Before deleting a task branch/worktree, compare it against the correct canonical target:
-
-- staging task → `origin/staging`
-- production task → `upstream/main`
-- docs task → `origin/documentation`
-
-A branch is safe to remove only when required work is:
-
-- present as ancestry;
-- patch-equivalent;
-- intentionally obsolete;
-- or preserved elsewhere.
-
-Do not use `mergedIntoWorkspaceHead` alone when the workspace HEAD is `workspace/control` or another unrelated branch.
-
-Do not delete unrelated backups or dirty files while cleaning Git worktrees.
-
-## 10. Session closeout
-
-For work that changed repository/runtime state, report:
-
-- task branch/worktree;
-- created commit SHA(s);
-- push destination;
-- exact canonical ref after integration;
-- runtime deployment SHA/version if deployed;
-- whether owner main contains the change;
-- remaining temporary branches/worktrees and why;
-- unrelated local changes intentionally left untouched;
-- blockers/follow-up work.
-
-Git merge and runtime deployment are separate events.
+Prefer one small, compatible and reversible issue over a rolling feature train, redundant helper, new infrastructure, or unbounded DB reads. If a contract or migration is genuinely breaking, document its gate and isolate the release instead of silently weakening protections.
