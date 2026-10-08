@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { File } from 'node:buffer';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { parse } from 'acorn';
 import { CHECKER_LIMITS } from '../src/utils/ejs-checker/limits.mjs';
 
 async function readExportExpression(relativePath, exportName) {
@@ -65,6 +66,13 @@ for (const [name, script] of Object.entries(fragments)) {
   assert.equal(typeof script, 'string', `${name} must evaluate to JavaScript text`);
   assert.doesNotMatch(script, /REDACTED_/, `${name} must not contain a persisted redaction placeholder`);
   new Function(script);
+}
+
+const layoutFunctions = new Set();
+for (const node of parse(fragments.homeLayoutRenderScript, { ecmaVersion: 'latest' }).body) {
+  if (node.type !== 'FunctionDeclaration') continue;
+  assert.ok(!layoutFunctions.has(node.id.name), `Duplicate layout function silently overrides an earlier declaration: ${node.id.name}`);
+  layoutFunctions.add(node.id.name);
 }
 
 const worldbookList = { innerHTML: '', querySelectorAll: () => [] };
@@ -432,7 +440,7 @@ assert.match(fragments.homeLayoutRenderScript, /data-workshop-view=\"discover\"/
 assert.match(fragments.homeLayoutRenderScript, /renderDiscoverHome/);
 assert.match(fragments.homeLayoutRenderScript, /renderStoreEditorialSelection\(\)/);
 assert.match(fragments.homeCardsRenderScript, /function renderStoreEditorialSelection/);
-assert.match(fragments.homeCardsRenderScript, /DLC KITCHEN/);
+assert.match(fragments.homeCardsRenderScript, /编辑精选/);
 assert.match(fragments.homeCardsRenderScript, /devteam-recommend-btn/);
 assert.match(fragments.homeApiScript, /\/api\/devteam-recommendations/);
 assert.match(recommendationsEndpointSource, /SUPER_ADMIN_USER_ID/);
@@ -454,10 +462,9 @@ assert.match(recommendationsEndpointSource, /reactionPresets: z\.array/);
 assert.match(indexSource, /\/api\/admin\/devteam-curator-profile/);
 assert.match(fragments.homeApiScript, /fetchDlcKitchenProfile/);
 assert.match(fragments.homeApiScript, /saveDlcKitchenProfile/);
-assert.match(fragments.homeCardsRenderScript, /data-devteam-curator-shift/);
-assert.match(fragments.homeCardsRenderScript, /查看全部 \$\{recommendations\.length\} 道/);
-assert.match(fragments.homeAppActionsScript, /touchstart/);
-assert.match(fragments.homeAppActionsScript, /openDlcKitchenCuratorModal/);
+assert.doesNotMatch(fragments.homeCardsRenderScript, /renderDevTeamRecommendations/);
+assert.doesNotMatch(fragments.homeAppActionsScript, /shiftDevTeamCurator/);
+assert.match(fragments.homeModalsScript, /openDlcKitchenCuratorModal/);
 assert.match(fragments.homeAppActionsScript, /openDlcKitchenSettingsModal/);
 assert.match(fragments.homeLayoutRenderScript, /dlcKitchenSettingsBtn/);
 assert.match(fragments.homeLayoutRenderScript, /mobileDlcKitchenSettingsBtn/);
@@ -471,7 +478,7 @@ assert.match(fragments.homeModalsScript, /DLC私房菜/);
 assert.match(fragments.homeDetailModalRenderScript, /DLC私房菜/);
 assert.match(fragments.homeDetailModalRenderScript, /detail-devteam-recommend-btn/);
 assert.match(fragments.homeModalsScript, /detail-devteam-recommend-btn/);
-assert.match(fragments.homeCardsRenderScript, /还没有私房菜/);
+assert.match(fragments.homeCardsRenderScript, /尚无推荐作品/);
 assert.match(fragments.homeLayoutRenderScript, /shelves\.downloads/);
 assert.doesNotMatch(fragments.homeLayoutRenderScript, /shelves\.likes/);
 assert.match(fragments.homeApiScript, /key: 'downloads', sort: 'downloads'/);
@@ -503,7 +510,7 @@ assert.doesNotMatch(fragments.homeLayoutRenderScript, /mobile-category-nav/);
 assert.match(fragments.homeLayoutRenderScript, /扩展方向/);
 assert.match(fragments.homeCardsRenderScript, /card-owner-stats/);
 assert.match(fragments.homeCardsRenderScript, /card-public-stats/);
-assert.match(fragments.homeCardsRenderScript, /discover-card-like like-btn/);
+assert.match(fragments.homeCardsRenderScript, /class="store-row-stats"/);
 assert.doesNotMatch(fragments.homeLayoutRenderScript, /data-metric-filter=\"likes\"/);
 assert.doesNotMatch(fragments.homeLayoutRenderScript, /data-metric-filter=\"downloads\"/);
 assert.doesNotMatch(fragments.homeApiScript, /params\.set\('minLikes'/);

@@ -39,36 +39,21 @@ export const homeAppStoreStyles = String.raw`
 .store-row-copy h3 { color:#f1efea; margin:0; font:690 .91rem/1.35 system-ui,"Microsoft YaHei",sans-serif;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .store-row-by { margin:0; color:#aaa9a6; font:.74rem/1.3 system-ui,"Microsoft YaHei",sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.store-row-note { margin:0; color:#c1b1a0; font:.73rem/1.3 system-ui,sans-serif; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .store-row-stats { display:flex; align-items:center; gap:6px; color:#928f8a; font:.68rem/1.25 system-ui,sans-serif; font-variant-numeric:tabular-nums; }
 .store-row-stats i { font-size:.63rem; }
 .store-row-open { display:inline-flex; flex:0 0 auto; justify-content:center; min-width:53px; padding:7px 10px; background:#2d3440; color:#d8c6b0; border-radius:999px; font:.77rem/1.1 system-ui,sans-serif; font-weight:740; }
 .store-row:hover .store-row-open { background:#4c4550; color:#fff; }
 
 /* Editor selections are compact lists, never a large cover carousel. */
-.store-home .devteam-curator-block { overflow:visible; border:0; background:transparent; box-shadow:none; border-radius:0; }
-.store-home .devteam-curator-head { display:flex; min-height:0; padding:9px 0 11px; gap:10px; background:transparent; border:0; }
-.store-home .devteam-curator-head:hover { background:transparent; }
-.store-home .devteam-curator-head img { width:34px; height:34px; border-radius:50%; }
-.store-home .devteam-curator-head h3 { font-size:.84rem; }
-.store-home .devteam-curator-head small,.store-home .devteam-curator-head p { color:#a6a4a2; font-size:.7rem; }
-.store-home .devteam-curator-view-all { color:#c6ae8e; font-size:.72rem; }
 .store-home .devteam-curator-track { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 22px; padding:0; }
 .store-home .devteam-recommend-item { min-width:0; }
 .store-home .devteam-recommend-item .discover-card-cover-shell { border-radius:13px; }
-.store-home .devteam-curator-arrow { z-index:2; top:-28px; width:30px; height:30px; border:1px solid rgba(255,255,255,.15); background:#292b30; box-shadow:none; }
-.store-home .devteam-curator-arrow--prev { left:auto; right:39px; }
-.store-home .devteam-curator-arrow--next { right:0; }
-.store-home .devteam-curator-dots { margin:9px 0 0; }
 
 /* Catalog: publicly browsable works use the same compact rows. Keep editable cards
    unchanged for authenticated authors/admins to retain their management actions. */
 .workshop-shell .projects-grid.store-catalog { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 22px; display:grid; margin:0 0 16px; }
 .workshop-shell .projects-grid.store-catalog .store-row { height:auto; }
 .workshop-shell .projects-grid.store-catalog .projects-empty { grid-column:1/-1; }
-.workshop-shell .workshop-library-head { margin:15px 0; padding:5px 0 15px; }
-.workshop-shell .workshop-library-head h2 { font-size:1.4rem; }
-.workshop-shell .workshop-library-head p { font-size:.8rem; color:#aaa; }
 .workshop-shell .desktop-sidebar { box-shadow:none; }
 
 /* Existing daily draw remains reachable, but does not dominate the browse page. */
@@ -83,7 +68,6 @@ export const homeAppStoreStyles = String.raw`
  .store-row-copy h3 { font-size:.88rem; }
  .store-row-open { min-width:48px; padding:7px 8px; font-size:.72rem; }
  .store-row-rank { width:20px; flex-basis:20px; font-size:.95rem; }
- .store-home .devteam-curator-head p { display:none; }
 }
 @media (max-width:375px) {
  .store-row .discover-card-cover-shell { width:50px; height:50px; flex-basis:50px; }
