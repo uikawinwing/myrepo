@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const adminSource = await readFile(resolve('src/endpoints/admin.ts'), 'utf8');
@@ -149,6 +151,39 @@ function makeContext(bucket) {
   await result.rollback();
   assert.equal(state.get('projects/live/project-live.json')?.body, 'OLD_PROJECT');
   assert.equal(state.get('projects/live/regex-live.json')?.body, 'OLD_REGEX');
+}
+
+// Latest submitted draft is the only actionable review snapshot.
+// Extract the actual SQL template instead of testing a hand-written approximation.
+{
+  const helper = dbSource.split('function latestSubmittedReviewCondition(')[1];
+  assert.ok(helper, 'the latest-submitted predicate must exist');
+  const template = helper.split('return `')[1]?.split('`;')[0];
+  assert.ok(template, 'SQL predicate body must remain readable');
+  const queueWhere = template.replaceAll(String.fromCharCode(36) + '{alias}', 'p');
+  const updateWhere = template.replaceAll(String.fromCharCode(36) + '{alias}', 'projects');
+  assert.ok(dbSource.includes("latestSubmittedReviewCondition('p')"), 'queue count and list share latest eligibility');
+  assert.ok(reviewSource.includes("latestSubmittedReviewCondition('projects')"), 'review uses same eligibility');
+  assert.equal(reviewSource.split('AND ' + String.fromCharCode(36) + '{reviewEligibility} RETURNING id').length - 1, 2, 'both approval and rejection must be protected');
+
+  const db = new DatabaseSync(':memory:');
+  db.exec(readFileSync(resolve('schema.sql'), 'utf8'));
+  db.exec("INSERT INTO users (id, username) VALUES ('author', 'author')");
+  const insert = db.prepare("INSERT INTO projects (id, name, author_id, author_name, status, review_target, published_project_id, created_at, project_type) VALUES (?, '相同标题', 'author', 'author', ?, 'draft', ?, ?, '扩展')");
+  insert.run('old', 'pending', 'published-one', '2026-10-01T00:00:00.000Z');
+  insert.run('new', 'pending', 'published-one', '2026-10-02T00:00:00.000Z');
+  insert.run('editing', 'drafting', 'published-one', '2026-10-03T00:00:00.000Z');
+  insert.run('unrelated', 'pending', 'published-two', '2026-10-01T00:00:00.000Z');
+
+  const pending = () => db.prepare("SELECT p.id FROM projects p WHERE p.status = 'pending' AND " + queueWhere + " ORDER BY p.created_at ASC").all().map(row => row.id);
+  assert.deepEqual(pending(), ['unrelated', 'new'], 'same-title unrelated project stays; newer editing draft does not replace pending');
+  const denied = db.prepare("UPDATE projects SET status = 'approved' WHERE id = 'old' AND status = 'pending' AND " + updateWhere).run();
+  assert.equal(denied.changes, 0, 'old request must not be approvable by direct ID');
+  db.exec("UPDATE projects SET status = 'rejected' WHERE id = 'new'");
+  assert.deepEqual(pending(), ['unrelated'], 'rejected newer submission must not resurrect older pending');
+  insert.run('resubmitted', 'pending', 'published-one', '2026-10-04T00:00:00.000Z');
+  assert.deepEqual(pending(), ['unrelated', 'resubmitted'], 'a later submitted draft becomes actionable');
+  db.close();
 }
 
 console.log('Admin review recovery smoke checks passed.');
