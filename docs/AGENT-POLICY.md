@@ -3,7 +3,7 @@
 > **Canonical location:** `origin/documentation:docs/AGENT-POLICY.md`  
 > **Status:** active / normative  
 > **Purpose:** repository-wide operating rules for agents and automated sessions  
-> **Related issue:** `uikawinwing/myrepo#27`
+> **Related issues:** `uikawinwing/myrepo#27`, `uikawinwing/myrepo#46`
 
 This is the single source of truth for repository operating policy. A copy found in any task worktree, old branch, chat handoff, archive, or generated context is not authoritative.
 
@@ -31,60 +31,45 @@ Documentation changes are made on a short-lived branch/worktree based on refresh
 
 Remotes:
 
-- `origin` = `https://github.com/uikawinwing/myrepo.git`
-- `upstream` = `https://github.com/AkabaneSaki/myrepo.git`
+- `origin` = `https://github.com/uikawinwing/myrepo.git` (fork, task branches, legacy preservation, documentation).
+- `upstream` = `https://github.com/AkabaneSaki/myrepo.git` (Owner production code).
 
 Canonical refs:
 
-- staging code source of truth: `origin/staging`
-- production code source of truth: `upstream/main`
-- shared documentation source of truth: `origin/documentation`
+- **Worker/Web/Client code baseline:** refreshed `upstream/main` at a recorded full Git SHA.
+- **Shared documentation source of truth:** `origin/documentation`.
+- **Legacy historical integration ref:** `origin/staging` is frozen for new feature integration; it is **not** a development baseline, deployment source of truth, or future release container.
+- **Historical staging backup:** `origin/backup/staging-pre-continuous-delivery-20261008` must be preserved until explicit retention/cleanup approval.
 
-`origin/main` may exist as a fork mirror. It is not a task-development or production-decision baseline.
+`origin/main` may be a fork mirror but is not the production baseline. Local branch names, workspace HEAD, and old worktree content do not override the explicit remote refs. Never infer the currently deployed code from a Git ref alone; verify Cloudflare deployment identity separately.
 
-Local branches named `main` or `staging` are not authoritative and are not required to exist.
+**Related migration:** `uikawinwing/myrepo#46`. The two Worker environments remain Production and Master Staging; a staging **runtime** does not imply a permanent staging **Git branch**.
 
-Never substitute the current workspace HEAD, a local mirror, or `mergedIntoWorkspaceHead` for an explicit canonical ref when deciding whether work is current, merged, deployable, or safe to delete.
+## 3. Continuous Worker/Web delivery
 
-## 3. Remote-canonical task workflow
+**Worker/Web changes ship continuously; the SillyTavern Client is released by SemVer when a client artifact/release is actually required.** A feature number in an Issue is not a mandatory Worker integration train.
 
-The repository follows:
-
-> **Remote canonical, task-branch local.**
-
-Normal feature/fix/refactor/code work starts from refreshed `origin/staging`:
+Normal independent task:
 
 ```text
-refresh origin/staging
-→ create short-lived task branch/worktree from exact origin/staging
-→ implement
-→ test/review
-→ commit only intended files
-→ push task branch
-→ PR into origin/staging
-→ merge
-→ refresh origin/staging
-→ verify integration
-→ cleanup task branch/worktree
+refresh upstream/main and origin/documentation
+→ resolve immutable upstream/main SHA
+→ create one short-lived task branch/worktree from it
+→ implement and test only the Issue or explicit dependency cluster
+→ check compatibility, D1 cost/schema, security and rollback
+→ candidate deployment to the Master Staging Worker from that exact task SHA
+→ staging smoke / Master acceptance
+→ Owner PR into upstream/main; review/CI; merge
+→ deploy the exact approved merged Owner-main SHA to Production
+→ verify live Worker identity, response and rollback path
+→ close Issue when acceptance passes; clean task branch/worktree
 ```
 
-Do not start ordinary feature development from `upstream/main`.
-
-Production hotfixes start from refreshed `upstream/main`:
-
-```text
-refresh upstream/main
-→ create hotfix branch/worktree from exact upstream/main
-→ implement and validate against production baseline
-→ owner PR into upstream/main
-→ merge
-→ deploy exact approved production source
-→ forward-port the logical fix into origin/staging
-→ verify both canonical lines
-→ cleanup
-```
-
-Do not reverse-merge the whole staging feature line into a production hotfix.
+- A Worker/Web-only, backwards-compatible change can ship independently with **no client tag**.
+- If an ST bridge/install-state contract is breaking, use an explicit client release lane (for example `release/2.3-client`) and planned compatibility cutover; do not quietly push it as a Worker-only issue.
+- A Production incident also starts from fresh `upstream/main`, uses a scoped hotfix branch, and goes through the same guarded exact-SHA production approval/deploy path. **Do not forward-port into old `origin/staging`.**
+- Do not mix unrelated work, batch all future features into a pseudo-2.3.0 branch, or merge old staging wholesale.
+- Cloudflare D1/R2 schema/data operations require their own proven safety gates; a Git merge does not authorize DB changes.
 
 ## 4. Primary workspace
 
@@ -102,22 +87,18 @@ Do not accumulate product work on it.
 
 ## 5. Required preflight before mutation
 
-Before commit, merge, rebase, push, tag, PR preparation, deployment, branch deletion, worktree cleanup, or other repository mutation:
+Before commit, PR, merge, push, tag, deployment, branch deletion, worktree cleanup or other repository mutation:
 
-1. Check repository/worktree/branch/HEAD/dirty state.
-2. Verify actual remote URLs; do not trust names alone.
-3. Refresh the canonical ref relevant to the operation.
-4. Compare the task against that explicit canonical ref.
-5. Identify unrelated tracked and untracked files.
-6. Preserve unrelated user work.
-7. Stage explicit reviewed paths only; never use `git add .`.
-8. Never force-push `upstream/main` or `origin/main`.
-9. Do not use raw Git to bypass a managed Git/Cotel safety refusal.
-10. Treat a failed safety check as a blocker to diagnose, not a check to weaken.
+1. Check actual repository/worktree/branch/HEAD and staged, unstaged and untracked state.
+2. Verify remote URLs and refresh the **relevant canonical ref** (`upstream/main` for code; `origin/documentation` for docs).
+3. Record the full SHA of the source and target; never resolve to the current workspace HEAD implicitly.
+4. Confirm unrelated user work will remain untouched, and stage only reviewed paths.
+5. For runtime operations, verify **exact Cloudflare account + Worker + D1 + R2** bindings and deployment helper profile.
+6. Check D1 cost/migration ledger, source cleanliness, compatibility, rollback, deployment lock and dry-run.
+7. Never force-push protected/main refs, bypass managed Cotel Git safety refusals, or switch/deploy dirty worktrees.
+8. Treat failed guardrails as blockers, not excuses for ad-hoc Git/Wrangler execution.
 
-For staging code work, refresh `origin/staging`.  
-For production code work, refresh `upstream/main`.  
-For documentation work, refresh `origin/documentation`.
+The legacy `origin/staging` is refreshed **only to inspect/preserve/retire historical work**, never to start normal code tasks. Documentation changes start from refreshed `origin/documentation` on a separate short-lived docs branch.
 
 ## 6. Task branch and worktree lifecycle
 
@@ -136,70 +117,63 @@ Do not delete a branch only because it is old. Preserve unique work first.
 
 ## 7. Merge and cleanup safety
 
-Use the actual target:
+Compare task code to **`upstream/main`** and docs to **`origin/documentation`**. The old `origin/staging` is not a merge target.
 
-- staging task → compare with `origin/staging`
-- production task → compare with `upstream/main`
-- docs task → compare with `origin/documentation`
+For old staging retirement:
 
-If a branch contains uncertain unique work, preserve it before destructive cleanup.
+- Maintain a per-work preservation map: already shipped/superseded; independently preserved for future work; intentionally obsolete.
+- Preserve unique test-only helpers or optional UX as backup/explicit task, not by blindly porting old implementation.
+- Verify any necessary D1 migration is **actually applied on the correct bound database**; never rerun it based only on migration files.
+- Keep the verified historical backup and do not reset, force-push or delete the legacy remote branch until recovery and retention decisions are explicit.
+- Do not remove another agent's active/dirty worktrees, temporary branches, or user data as collateral cleanup.
 
-If an old branch conflicts with current code, do not merge it wholesale just to simplify cleanup. Inspect and preserve only still-needed work.
-
-Unrelated backups, dirty files, or user data are never collateral cleanup.
+A completed migration Issue can close when the old ref is clearly retired/frozen and preserved, documentation and tooling are current, and the production candidate path is verified. Permanent physical deletion of a preserved ref is **not** required to close the Issue.
 
 ## 8. Git state and runtime state are separate
 
-Use precise terms:
+- `upstream/main` = production code source and baseline for **all new tasks**.
+- `origin/documentation` = authoritative policy/documentation.
+- `origin/staging` = frozen historical branch, **not** today's staging runtime.
+- **Master Staging Worker** = isolated Cloudflare test runtime for **one exact task SHA / dependency cluster at a time**.
+- Production Worker = live Cloudflare runtime, deployed only after Owner merge and protected preflight.
 
-- `origin/staging` = Git staging integration line
-- staging Worker = Cloudflare test runtime
-- staging site = user-facing site backed by the staging Worker
-- `upstream/main` = production Git source
-- production Worker = production Cloudflare runtime
+Report Git source SHA, Cloudflare account/Worker/bindings, deployment/version ID, validation and rollback separately. Never claim the staging runtime contains all future Issue branches or that a newer deployment timestamp implies a newer code baseline.
 
-Do not say only “staging is updated/ready”. Report Git and runtime states separately.
+## 9. Master Staging runtime invariant
 
-## 9. Staging runtime invariant
-
-The normal staging Worker must run code already integrated into `origin/staging`.
-
-Normal order:
+Master Staging is a **serial, disposable candidate runtime**, not a Git integration branch.
 
 ```text
-task branch
-→ test/review
-→ PR/merge into origin/staging
-→ refresh origin/staging
-→ record exact SHA
-→ deploy exact SHA to staging Worker
-→ verify staging site
-→ Master acceptance
+one accepted candidate task SHA (based on upstream/main)
+→ locked deploy-helper CheckOnly / cost + DB + target identity gates
+→ candidate deployment
+→ HTTP/functional/security smoke and Master acceptance
+→ Owner PR / merge
+→ exact approved Owner-main production deployment
 ```
 
-Do not deploy an ordinary task branch directly to the normal staging Worker. Use a separately named preview/temporary Worker for isolated pre-integration experiments.
+- Parallel coding is allowed; **shared Master Staging deployments and Production promotions are serialized**.
+- Record the previous Cloudflare deployment/version as the rollback target before changing a Worker.
+- Confirm Master Staging **Johnjohnson67076 / poemofdestinycreativeworkshop-master-staging** identity via actual binding/profile checks; never substitute the obsolete AkabaneSaki `-staging` Worker.
+- No generic feature deployment to Production from a task branch.
+- A shared staging environment may briefly test a non-merged candidate; it must not be mistaken for a permanent source line or accumulate unrelated features.
+- Changing a database or relaxing reviewer permissions is not authorized by passing a Web-only pilot.
 
 ## 10. Deployment contract
 
-Use the existing fail-closed deployment helper:
+**Versioned generic helper source** is tracked in `scripts/deployment/` (Owner PR #102). Its authorized machine-installed entry point and target profiles live under `.cotel/local/one-click-deploy/`; do not commit machine credentials or infer that a source merge has installed a profile.
 
-- engine: `.cotel/local/one-click-deploy/deploy-worker.ps1`
-- profiles: `.cotel/local/one-click-deploy/profiles/*.json`
-- compatibility shortcuts under `.cotel/local/`
+All Worker deployments go through the existing **fail-closed, lock-aware helper**:
 
-The helper resolves an allowed remote branch/tag to an exact commit, temporarily switches to that exact source, deploys, and restores the previous checkout.
+1. Identify the exact intended account/Worker/D1/R2 and permitted remote task branch or Owner main.
+2. Pin a **full 40-character immutable source SHA**, verify branch resolution, allowed ancestry and clean checkout.
+3. Run `CheckOnly`, CI/tests, D1 cost gate, migration ledger check and Wrangler dry-run; confirm rollback target.
+4. For Master Staging, use only the explicitly authorized candidate target/profile.
+5. For Production, require the exact **merged Owner-main SHA**, approved target and deployment safety checks.
+6. After deploy, inspect actual Cloudflare version/bindings, expected public behavior and preserved previous deployment.
+7. Restore original checkout and release locks; separately clean task branches/worktrees after verification.
 
-Local branches named `main` or `staging` are not required for deployment.
-
-Rules:
-
-1. Use the existing helper before considering another deployment path.
-2. Prefer profile/source-selector changes over duplicate scripts.
-3. Extend the generic helper once if a reusable capability is genuinely missing.
-4. Never fall back to ad-hoc `wrangler deploy` because a helper check failed.
-5. A failed helper check is a stop signal.
-6. Deploy only from a worktree satisfying the helper cleanliness policy.
-7. `workspace/control` is not a deployment workspace.
+Never bypass a failed guardrail with ad-hoc `wrangler deploy` or swap credential/profile to make a check pass. Source code in `scripts/deployment/` and installed helper/profile **must be checked for drift** before use. Historical `origin/staging` must not remain the default allowed candidate source.
 
 ## 11. Infrastructure boundary
 
@@ -211,11 +185,13 @@ Never infer runtime ownership from Git remote ownership. A Git push is not a dep
 
 ## 12. Release/version policy
 
-For Creative Workshop release/version semantics, read:
+Creative Workshop release semantics live in `origin/documentation:docs/WORKSHOP-RELEASE-SOP.md`:
 
-`origin/documentation:docs/WORKSHOP-RELEASE-SOP.md`
+- Worker/Web: continuous, exact-SHA deployed, **no Worker SemVer** and no forced ST tag.
+- ST Client: intentional SemVer releases; breaking Bridge/install-state changes use an explicit release lane and compatibility checks.
+- Latest client support baseline is read from `config/workshop.json`; do not invent literal live version numbers in policy.
 
-Do not duplicate live version numbers in policy prose. Read current values from `config/workshop.json`.
+Related Issue: `uikawinwing/myrepo#46`.
 
 ## 13. EJS / Regex checker policy
 
