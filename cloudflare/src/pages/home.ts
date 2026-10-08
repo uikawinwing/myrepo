@@ -1,5 +1,6 @@
 import { homeScript } from './home/app';
 import { homeShellStyles } from './home/shell-styles';
+import { homeEditorialStyles } from './home/editorial-styles';
 import { homeStyles } from './home/styles';
 
 function getHomeScriptRevision(source: string): string {
@@ -27,7 +28,7 @@ export const homePage = (): string => {
   <style>html,body{margin:0;min-height:100%;background:#0f1012;color:#ececea}body{min-height:100vh}</style>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-lite-webfont@1.7.0/style.css">
-  <style>${homeStyles}${homeShellStyles}</style>
+  <style>${homeStyles}${homeShellStyles}${homeEditorialStyles}</style>
 </head>
 <body>
   <div class="container" id="app"></div>

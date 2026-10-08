@@ -57,7 +57,12 @@ switch ($tool) {
         if ($command -match '\bd1 info\b') { 'audit-db-id' }
         elseif ($command -match '\bd1 migrations list\b') { 'No migrations to apply!' }
         elseif ($command -match '\bd1 migrations apply\b') { 'fixture migrations applied' }
-        elseif ($command -match '\bdeployments list\b') { '[{"id":"audit-deployment","versions":[{"version_id":"audit-before-version","percentage":100}]}]' }
+        elseif ($command -match '\bdeployments list\b') {
+            if ($state.scenario -like 'candidate-preview-new*') { 'Cloudflare API 10007: Worker not found'; $code = 1 }
+            elseif ($state.scenario -eq 'candidate-preview-unauthorized') { 'Cloudflare API 403: Forbidden'; $code = 1 }
+            else { '[{"id":"audit-deployment","versions":[{"version_id":"audit-before-version","percentage":100}]}]' }
+        }
+        elseif ($command -match '\bwhoami\b') { 'Account audit-account' }
         elseif ($arguments -contains '--dry-run') {
             if ($state.scenario -eq 'dry-run-fails') { 'fixture build failed'; $code = 9 }
             else { '--dry-run: exiting now.' }
@@ -114,7 +119,7 @@ function Run-Case([string]$Name, [scriptblock]$Check, [switch]$Deploy, [switch]$
     $source = Join-Path $caseRoot 'source'
     New-Item -ItemType Directory -Force -Path (Join-Path $source 'cloudflare') | Out-Null
     $profileId = 'audit-' + $Name
-    $worker = 'audit-worker-' + $Name
+    $worker = if ($Name -like 'candidate-preview-*') { 'audit-appstore-preview' } else { 'audit-worker-' + $Name }
     $config = [ordered]@{
         name = $(if ($WrongWorker) { 'wrong-worker' } else { $worker })
         account_id = 'audit-account'
@@ -126,6 +131,12 @@ function Run-Case([string]$Name, [scriptblock]$Check, [switch]$Deploy, [switch]$
         $config.d1_databases = @(@{ binding = 'DB'; database_name = 'audit-db'; database_id = 'wrong-id' }, @{ binding = 'OTHER'; database_name = 'other-db'; database_id = 'audit-db-id' })
     }
     if ($Name -eq 'wrong-key-case') { $config.Remove('name'); $config['Name'] = $worker }
+    if ($Name -like 'candidate-preview-*') {
+        $config.Remove('d1_databases')
+        $config['workers_dev'] = $true
+        $config['services'] = @(@{ binding = 'STAGING_WORKER'; service = 'audit-staging-worker' })
+        if ($Name -eq 'candidate-preview-bad-binding') { $config['d1_databases'] = @(@{ binding = 'DB'; database_name = 'audit-db'; database_id = 'audit-db-id' }) }
+    }
     $configPath = Join-Path $source 'cloudflare/wrangler.jsonc'
     $configText = $config | ConvertTo-Json -Depth 10
     if ($Name -eq 'jsonc') { $configText = '/* fixture comment */' + $configText.Substring(0, $configText.Length - 1) + ",`n}" }
@@ -147,6 +158,11 @@ function Run-Case([string]$Name, [scriptblock]$Check, [switch]$Deploy, [switch]$
         auth = @{ wranglerProfile = 'fixture-only'; allowEnvironmentToken = $false; allowOauthFallback = $true }
     }
     if ($Name -eq 'candidate-production') { $profile.target.class = 'production' }
+    if ($Name -like 'candidate-preview-*') {
+        $profile.target['createNewPreviewWorker'] = $true
+        $profile.target['previewService'] = 'audit-staging-worker'
+        $profile.bindings.d1 = $null
+    }
     $profilePath = Join-Path $caseRoot ($profileId + '.json')
     $profile | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $profilePath -Encoding utf8
     $state = @{ scenario = $Name; dirty = ($Name -eq 'dirty-start'); head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; originalHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; sourceHead = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; branch = 'fixture-main'; restored = $false; calls = @() }
@@ -256,7 +272,7 @@ function Run-BoundaryChecks {
 }
 
 try {
-    New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'engine'), (Join-Path $testRoot 'tools') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'engine'), (Join-Path $testRoot 'engine/logs'), (Join-Path $testRoot 'tools') | Out-Null
     Copy-Item -LiteralPath $enginePath -Destination (Join-Path $testRoot 'engine/deploy-worker.ps1')
     Assert ((Get-FileHash $enginePath).Hash -eq (Get-FileHash (Join-Path $testRoot 'engine/deploy-worker.ps1')).Hash) 'Helper fixture differs from installed helper'
     $toolSource | Set-Content -LiteralPath (Join-Path $testRoot 'tools/git.ps1') -Encoding utf8
@@ -379,6 +395,32 @@ try {
         Assert ($r.ExitCode -eq 0) $r.Output
         Assert (@($r.Calls | Where-Object { $_ -match 'merge-base --is-ancestor upstream/main b{40}' }).Count -gt 0) 'Candidate ancestry guard did not run'
         Assert ($r.Log.Contains('WORKER DEPLOYMENT SUCCESS')) 'Fixture success missing'
+    }
+    Run-Case 'candidate-preview-new' {
+        param($r)
+        Assert ($r.ExitCode -eq 0) $r.Output
+        Assert ($r.Log.Contains('New preview Worker absence verified')) 'New Worker was not verified'
+        Assert (-not ($r.Calls -match 'npx .* deploy --config')) 'CheckOnly published a preview'
+    }
+    Run-Case 'candidate-preview-new-deploy' -Deploy {
+        param($r)
+        Assert ($r.ExitCode -eq 0) $r.Output
+        Assert ($r.Log.Contains('WORKER DEPLOYMENT SUCCESS')) 'Preview was not deployed'
+    }
+    Run-Case 'candidate-preview-existing' {
+        param($r)
+        Assert ($r.ExitCode -ne 0) 'Create-only profile overwrote an existing Worker'
+        Assert ($r.Log.Contains('already exists')) 'Existing Worker refusal is missing'
+    }
+    Run-Case 'candidate-preview-unauthorized' {
+        param($r)
+        Assert ($r.ExitCode -ne 0) 'Cloudflare 403 was mistaken for missing Worker'
+        Assert ($r.Log.Contains('absence could not be proven')) 'Cloudflare 403 refusal is missing'
+    }
+    Run-Case 'candidate-preview-bad-binding' {
+        param($r)
+        Assert ($r.ExitCode -ne 0) 'New Worker accepted unexpected D1 binding'
+        Assert (-not ($r.Calls -match 'npx ')) 'Bad binding reached Cloudflare'
     }
     Run-BoundaryChecks
 }

@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "poem-workshop-appstore-preview",
+  "main": "src/appstore-preview.ts",
+  "account_id": "244413515a4546e4901b821c957158f7",
+  "compatibility_date": "2026-03-12",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
+  "services": [
+    {
+      "binding": "STAGING_WORKER",
+      "service": "poemofdestinycreativeworkshop-master-staging"
+    }
+  ]
+}

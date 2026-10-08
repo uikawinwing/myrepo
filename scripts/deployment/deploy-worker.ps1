@@ -559,7 +559,47 @@ try {
 
     Step 'Verifying Worker access'
     $deploymentListArgs = @('--yes', $Wrangler, 'deployments', 'list', '--config', $ResolvedConfigPath, '--json') + $WranglerAuthArgs
-    $null = Invoke-Captured $Npx.Source $deploymentListArgs 'Worker access verification failed.'
+    $firstCreation = [bool](Get-Prop $target 'createNewPreviewWorker' $false)
+    if ($firstCreation) {
+        if ((Get-Prop $target 'class' '') -cne 'staging' -or $expectedWorker -notlike '*-preview') {
+            Stop-Deploy 'New Worker creation requires a staging profile and -preview name.'
+        }
+        if ($null -ne $d1 -or $null -ne $kv -or $null -ne $r2 -or $durableObjects.Count -gt 0) {
+            Stop-Deploy 'Preview creation forbids database, KV, R2 and Durable Object bindings.'
+        }
+        if (@(Get-Prop $parsedConfig 'd1_databases' @()).Count -gt 0 -or
+            @(Get-Prop $parsedConfig 'kv_namespaces' @()).Count -gt 0 -or
+            @(Get-Prop $parsedConfig 'r2_buckets' @()).Count -gt 0 -or
+            @(Get-Prop (Get-Prop $parsedConfig 'durable_objects') 'bindings' @()).Count -gt 0 -or
+            $null -ne (Get-Prop $parsedConfig 'triggers') -or
+            @(Get-Prop $parsedConfig 'routes' @()).Count -gt 0 -or
+            $null -ne (Get-Prop $parsedConfig 'route') -or
+            -not [bool](Get-Prop $parsedConfig 'workers_dev' $false)) {
+            Stop-Deploy 'New preview must be workers.dev only and have no storage or cron bindings.'
+        }
+        $expectedService = [string](Get-Prop $target 'previewService' '')
+        $services = @(Get-Prop $parsedConfig 'services' @())
+        if (-not $expectedService -or $services.Count -ne 1 -or
+            (Get-Prop $services[0] 'binding' '') -cne 'STAGING_WORKER' -or
+            (Get-Prop $services[0] 'service' '') -cne $expectedService) {
+            Stop-Deploy 'New preview must use the explicitly approved staging service binding.'
+        }
+        $identityArgs = @('--yes', $Wrangler, 'whoami', '--config', $ResolvedConfigPath) + $WranglerAuthArgs
+        $identity = Invoke-Captured $Npx.Source $identityArgs 'Preview account verification failed.'
+        if (-not $identity.Contains($expectedAccountId)) { Stop-Deploy 'Wrong Cloudflare account for preview.' }
+        $foundOutput = & $Npx.Source @deploymentListArgs 2>&1
+        $foundCode = $LASTEXITCODE
+        $foundText = ($foundOutput | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        if ($foundText -and $script:LogPath) { Add-Content -Path $script:LogPath -Value $foundText -Encoding utf8 }
+        if ($foundCode -eq 0) { Stop-Deploy 'Preview Worker already exists; createNewPreviewWorker may only be used once.' }
+        if ($foundText -notmatch '(?i)(10007|404|not found|not exist|could not find|no such worker)') {
+            Stop-Deploy 'Preview Worker absence could not be proven.'
+        }
+        Pass "New preview Worker absence verified: $expectedWorker"
+    }
+    else {
+        $null = Invoke-Captured $Npx.Source $deploymentListArgs 'Worker access verification failed.'
+    }
     Pass 'Worker access verified.'
 
     Step 'Running Worker dry-run'

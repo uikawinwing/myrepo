@@ -27,6 +27,7 @@ const homeAppSource = (await Promise.all([
 ].map(path => readFile(resolve(path), 'utf8')))).join('\n');
 const homePageSource = await readFile(resolve('src/pages/home.ts'), 'utf8');
 const homeStylesSource = await readFile(resolve('src/pages/home/styles.ts'), 'utf8');
+const editorialStylesSource = await readFile(resolve('src/pages/home/editorial-styles.ts'), 'utf8');
 const recommendationsEndpointSource = await readFile(resolve('src/endpoints/recommendations.ts'), 'utf8');
 const indexSource = await readFile(resolve('src/index.ts'), 'utf8');
 const projectReadEndpointSource = await readFile(resolve('src/endpoints/projects/read.ts'), 'utf8');
@@ -341,7 +342,18 @@ assert.doesNotMatch(fragments.homeApiScript, /selectDiscoverProjects|getDiscover
 assert.match(fragments.homeApiScript, /\{ key: 'discover', sort: 'discover', pageSize: 10 \}/);
 assert.match(fragments.homeApiScript, /\{ key: 'updated', sort: 'updated', pageSize: 5 \}/);
 
-assert.match(fragments.homeLayoutRenderScript, /随机发现/);
+assert.match(fragments.homeLayoutRenderScript, /探索新故事/);
+assert.match(fragments.homeLayoutRenderScript, /discover-shelf--/);
+assert.match(fragments.homeCardsRenderScript, /编辑精选/);
+assert.doesNotMatch(fragments.homeCardsRenderScript, /DLC KITCHEN/);
+assert.match(homePageSource, /homeEditorialStyles/);
+assert.match(editorialStylesSource, /discover-shelf--spotlight/);
+assert.match(editorialStylesSource, /discover-shelf--compact/);
+assert.match(editorialStylesSource, /devteam-curator-track/);
+assert.match(editorialStylesSource, /max-width: 600px/);
+assert.match(fragments.homeLayoutRenderScript, /workshop-library-head/);
+assert.match(fragments.homeLayoutRenderScript, /variant: "compact"/);
+assert.match(fragments.homeApiScript, /\/api\/devteam-recommendations/);
 assert.match(fragments.homeLayoutRenderScript, /最近更新/);
 
 assert.match(fragments.homeCardsRenderScript, /const projectType = getBaseTag\(project\)/);
@@ -400,7 +412,7 @@ assert.match(fragments.homeStateScript, /viewMode: 'discover'/);
 assert.match(fragments.homeLayoutRenderScript, /data-workshop-view=\"discover\"/);
 assert.match(fragments.homeLayoutRenderScript, /renderDiscoverHome/);
 assert.match(fragments.homeLayoutRenderScript, /renderDevTeamRecommendations\(\)/);
-assert.match(fragments.homeCardsRenderScript, /DLC KITCHEN/);
+assert.match(fragments.homeCardsRenderScript, /CURATED FOR YOU/);
 assert.match(fragments.homeCardsRenderScript, /devteam-recommend-btn/);
 assert.match(fragments.homeApiScript, /\/api\/devteam-recommendations/);
 assert.match(recommendationsEndpointSource, /SUPER_ADMIN_USER_ID/);
@@ -439,7 +451,7 @@ assert.match(fragments.homeModalsScript, /DLC私房菜/);
 assert.match(fragments.homeDetailModalRenderScript, /DLC私房菜/);
 assert.match(fragments.homeDetailModalRenderScript, /detail-devteam-recommend-btn/);
 assert.match(fragments.homeModalsScript, /detail-devteam-recommend-btn/);
-assert.match(fragments.homeCardsRenderScript, /还没有私房菜/);
+assert.match(fragments.homeCardsRenderScript, /尚无精选作品/);
 assert.doesNotMatch(fragments.homeLayoutRenderScript, /shelves\.downloads/);
 assert.doesNotMatch(fragments.homeLayoutRenderScript, /shelves\.likes/);
 assert.doesNotMatch(fragments.homeApiScript, /key: 'downloads', sort: 'downloads'/);
