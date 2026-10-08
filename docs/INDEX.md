@@ -19,9 +19,9 @@ Shared documentation is maintained only on the canonical documentation line. Ord
 
 | Name | Purpose | Audience | When to read | Status | Related issue(s) |
 | --- | --- | --- | --- | --- | --- |
-| `AGENT-POLICY.md` | Normative continuous Worker delivery/Git/worktree/deployment/documentation rules | Agents and automated sessions | Every repository session that may mutate code/Git/docs/runtime | **Normative** | `uikawinwing/myrepo#27` |
+| `AGENT-POLICY.md` | Normative continuous Worker delivery/Git/worktree/deployment/documentation rules | Agents and automated sessions | Every repository session that may mutate code/Git/docs/runtime | **Normative** | `uikawinwing/myrepo#27`, `uikawinwing/myrepo#46` |
 | `GIT-WORKFLOW.md` | Human-readable candidate staging and exact-SHA continuous delivery workflow | Human maintainers | Git/branch/worktree/PR/release housekeeping | Active guide; non-normative when conflicting with Agent Policy | `uikawinwing/myrepo#27`, `uikawinwing/myrepo#46` |
-| `WORKSHOP-RELEASE-SOP.md` | Creative Workshop continuous Worker/Web delivery vs Client SemVer model | Release owners and agents handling tags/deploys | Client tag, staging→production release, production hotfix | Active domain SOP | release-specific issue + `uikawinwing/myrepo#46` for delivery model |
+| `WORKSHOP-RELEASE-SOP.md` | Creative Workshop continuous Worker/Web delivery vs Client SemVer model | Release owners and agents handling tags/deploys | Client SemVer release, candidate→production promotion, production hotfix | Active domain SOP | release-specific issue + `uikawinwing/myrepo#46` for delivery model |
 | `EJS-COMPATIBILITY-STANDARD.md` | Current Upload Gate/Audit Center EJS + Regex compatibility/risk contract | Creators plus checker/audit maintainers | Checker, upload validation, audit-center changes | Active normative domain standard | `uikawinwing/myrepo#12`, `uikawinwing/myrepo#23`; historical `AkabaneSaki/myrepo#37` |
 
 ## Maintained audits / references
