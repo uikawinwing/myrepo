@@ -2,7 +2,7 @@
 
 Status: **active normative standard**  
 Version: **v1**  
-Last reviewed: **2026-10-07**  
+Last reviewed: **2026-10-10**
 Purpose: define the current Workshop Upload Gate / Audit Center EJS and Regex compatibility/risk contract.  
 Related issues: `uikawinwing/myrepo#12`, `uikawinwing/myrepo#23`; historical implementation tracker `AkabaneSaki/myrepo#37`.
 
@@ -70,13 +70,13 @@ Workshop 不维护两套互相漂移的 checker。底层 analyzer 只保留一�
 
 #### Upload Gate
 
-Upload Gate 的目标是先挡掉不值得消耗人工审核时间的内容。
+Upload Gate 只自动拒绝未通过 L1–L7 组合兼容规则的内容。Checker 提供检查线索，人工审核员拥有最终批准或拒绝权。
 
-- `gate: reject`：存在明确阻断，例如 L 系列的 high 兼容错误、EJS parse / compile error、M1 / M2 / M5 等 Workshop 明确禁用能力；
+- `gate: reject`：存在 L1–L7 的 high 兼容错误；
 - `gate: accept`：没有自动阻断，可以进入人工审核；
-- M3 / M4 / U2–U5 / AH 这类“需要人判断”的 finding 本身不应因为机器不确定就自动把上传拒绝。
+- M1–M5、U2–U5、AH、语法错误及检查工具限制都交由人工判断，不单独导致自动拒绝。文件读取、格式和内容绑定验证仍须完成；无法取得有效内容不是 checker 的拒绝判决。
 
-Upload Gate 不是免费 JavaScript debugger。对于安全/风险 detector，只需要告诉作者“脚本未通过 Workshop 自动规则”或“可以进入人工审核”，不公开完整 detector 细节、绕过条件或逐步调试方法。
+Upload Gate 不是免费 JavaScript debugger。对于安全/风险 detector，告诉作者“脚本存在风险提示，可以进入人工审核”，不公开完整 detector 细节、绕过条件或逐步调试方法。
 
 L 系列例外。L1–L7 是公开的 Workshop EJS 组合兼容规范，不代表作者恶意，因此 uploader 应看到：
 
@@ -91,11 +91,12 @@ LLM 修复提示必须要求：只修 L 系列兼容问题，保持原功能 / �
 
 #### Audit Center
 
-只有通过 Upload Gate 的内容才进入正常人工审核。
+通过 Upload Gate 的内容进入正常人工审核；审核中心也允许审核员对已有的自动拒绝结果作最终决定。
 
-- `audit: green`：没有需要 reviewer 特别留意的 warn / hint；
-- `audit: yellow`：存在 M3 / M4 / U2–U5 / AH 等需要人工确认的位置；
-- 若 `gate: reject`，`audit` 为 `not_applicable`，应先让作者修阻断项，不把明显不合格内容继续丢给 coworker。
+- `audit: green`：没有尚未人工确认的 high / warn / hint；
+- `audit: yellow`：存在尚未人工确认的 high / warn / hint；
+- 若 `gate: reject`，机器报告保留 `audit: not_applicable`，但这不是人工批准的禁令。审核员可在完成当前内容检查后填写理由并人工批准，保留原始检查结果及批准记录。
+- 人工批准只能针对已验证身份、内容和版本的当前项目，不能复用其他文件或旧版本的检查证明。相同内容的已确认风险可继承，内容或规则变化后重新确认。
 
 Audit Center 可以显示完整 evidence：规则 ID、精确位置、代码片段、原因与审核建议，方便 coworker 或 LLM 只检查黄色位置。
 
@@ -104,7 +105,7 @@ Audit Center 可以显示完整 evidence：规则 ID、精确位置、代码片�
 每条 finding 同时带可见性：
 
 - `uploader_detailed`：L1–L7、EJS-PARSE、文件读取错误；
-- `uploader_generic`：M1 / M2 / M5 等明确阻断，但不把安全 detector 的完整实现细节当成作者调试教程；
+- `uploader_generic`：M1 / M2 / M5 等 high 风险提示，但不把安全 detector 的完整实现细节当成作者调试教程；
 - `reviewer_only`：M3 / M4 / U2–U5 / AH 等需要人工判断的详细 evidence。
 
 这个边界服务的是审核流程，不是“安全靠隐藏”。真正的硬规则必须在 analyzer 本身成立；可见性只是避免把 Workshop 审核工具变成面向上传者的免费对抗式 debug 服务。
@@ -204,9 +205,9 @@ L7 是结构兼容规则，不是代码风格 lint。
 
 ## 4. M 系列：EJS / Regex 共用 JavaScript 规则
 
-### M1 — 禁止可执行 `eval`
+### M1 — 可执行 `eval` 风险
 
-以下属于阻断：
+以下属于 high 风险，交由人工审核：
 
 ```js
 eval(code);
@@ -224,7 +225,7 @@ const text = "eval('example')";
 
 EJS comment 内的 `eval` 也不因关键词本身失败。
 
-### M2 — 禁止 `Function` 构造器动态创建代码
+### M2 — `Function` 构造器动态创建代码风险
 
 例如：
 
@@ -234,7 +235,7 @@ new Function("return 1");
 window.Function("return 1");
 ```
 
-都阻断。
+都标记为 high 风险，交由人工审核。
 
 ### M3 — 敏感或大范围浏览器数据访问
 
@@ -399,7 +400,7 @@ AH 可以存在，因为它不影响认证状态。
 
 ### O4 — EJS 解析失败不得静默跳过
 
-无法解析 / 编译的 EJS 必须明确 FAIL。
+无法解析 / 编译的 EJS 必须明确记录 high 与 `certification: fail`。它本身不导致 `gate: reject`，仍进入人工审核。
 
 ### O5 — 必须有机器可读的 Gate / Audit 状态
 
@@ -441,19 +442,13 @@ AH 可以存在，因为它不影响认证状态。
 
 ### Gate REJECT
 
-存在自动阻断项，例如：
+仅存在 L1–L7 的 high 兼容错误时自动拒绝。
 
-- L 系列的 high 阻断；
-- M1 / M2 / M5 等明确禁止能力；
-- EJS parse / compile error；
-- 文件无法读取；
-- 其他明确违反当前公约的 high 问题。
-
-这类内容先退回作者，不消耗 coworker 的正常人工审核时间。
+上传者默认修正 L 系列问题后重试。审核中心的人工审核员仍拥有最终决定权，可填写理由批准当前内容；自动检查结果及人工覆盖理由必须保留。
 
 ### Gate ACCEPT + Audit GREEN
 
-没有自动阻断，也没有 warn / AH。项目可以进入普通人工审核流程。
+没有自动阻断，也没有尚未人工确认的 high / warn / hint。项目可以进入普通人工审核流程。
 
 GREEN 仍不表示“绝对安全”或“无 bug”。
 
@@ -488,7 +483,7 @@ L6 不需要每次聊天生成都扫描全部世界书。
 
 1. 原 coworker fixture 的核心意图；
 2. EJS comment / JS comment / string 不误报 `eval`；
-3. 真正可执行 `eval` / `Function` 被阻断；
+3. 真正可执行 `eval` / `Function` 标记 high 并进入人工审核，不单独自动拒绝；
 4. 项目自己的 localStorage 设置不误报 M3；
 5. Regex `<script>` 与 EJS 共用 M / U；
 6. Regex 不应用 L1–L7；
